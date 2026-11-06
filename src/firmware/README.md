@@ -70,3 +70,41 @@ The M5StickC had two physical side buttons. The AtomS3R features a single tactil
    * Partition Scheme: `8MB with spiffs`
    * USB CDC On Boot: `Enabled`
 5. Compile and upload!
+
+---
+
+## 🛠️ Arduino IDE Troubleshooting
+
+### Error: `'mbedtls_md5_starts_ret' was not declared in this scope`
+```
+c:\Users\...\Arduino\libraries\ESPAsyncWebServer\src\WebAuthentication.cpp:74:3: error: 'mbedtls_md5_starts_ret' was not declared in this scope; did you mean 'mbedtls_md5_starts'?
+```
+
+#### Cause
+Arduino-ESP32 Board Package **v3.0.0+** upgrades the core to ESP-IDF 5.x and **mbedTLS 3.x**. In mbedTLS 3.x, the deprecated wrapper functions `mbedtls_md5_starts_ret`, `mbedtls_md5_update_ret`, and `mbedtls_md5_finish_ret` were permanently deleted. Legacy versions of `me-no-dev/ESPAsyncWebServer` (abandoned in 2020) fail to compile because of these old function names.
+
+#### Solution 1: 10-Second Quick In-Place Edit (Fastest)
+1. Open the file in Notepad, VSCode, or any text editor:
+   `...\Arduino\libraries\ESPAsyncWebServer\src\WebAuthentication.cpp`
+2. Scroll to lines 74–76 inside `getMD5`:
+   **Replace:**
+   ```cpp
+   mbedtls_md5_starts_ret(&_ctx);
+   mbedtls_md5_update_ret(&_ctx, data, len);
+   mbedtls_md5_finish_ret(&_ctx, _buf);
+   ```
+   **With:**
+   ```cpp
+   mbedtls_md5_starts(&_ctx);
+   mbedtls_md5_update(&_ctx, data, len);
+   mbedtls_md5_finish(&_ctx, (unsigned char *)_buf);
+   ```
+3. Save the file and click **Verify/Compile** in Arduino IDE. It will compile cleanly!
+
+#### Solution 2: Install Modern Mathieu Carbou Fork (Permanent)
+Mathieu Carbou (the creator of `MycilaESPConnect`) maintains the modern fork of `ESPAsyncWebServer` specifically designed for Arduino-ESP32 3.x and ESP-IDF 5:
+1. Close Arduino IDE.
+2. In your `Arduino\libraries\` folder, delete the old `ESPAsyncWebServer` folder.
+3. Open Arduino IDE > **Sketch > Include Library > Manage Libraries...**
+4. Search for `ESPAsyncWebServer` and install the version by **Mathieu Carbou** (or **ESP32Async**).
+5. Also ensure `AsyncTCP` is by **Mathieu Carbou** (v3.3.0+).

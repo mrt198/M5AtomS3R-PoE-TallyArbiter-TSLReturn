@@ -11,17 +11,20 @@ import {
   Sparkles,
   Layers,
   Radio,
-  ExternalLink
+  ExternalLink,
+  Wrench,
+  AlertTriangle
 } from 'lucide-react';
 import { AtomSimulator, SimulatorState } from './components/AtomSimulator';
 import { CodeViewer } from './components/CodeViewer';
 import { DiffViewer } from './components/DiffViewer';
 import { WebPortalPreview } from './components/WebPortalPreview';
 import { HardwareSpecs } from './components/HardwareSpecs';
+import { ArduinoTroubleshooting } from './components/ArduinoTroubleshooting';
 import { CPP_FIRMWARE_SOURCE, PLATFORMIO_INI } from './data/firmwareSources';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'simulator' | 'code' | 'diff' | 'portal' | 'hardware'>('simulator');
+  const [activeTab, setActiveTab] = useState<'simulator' | 'code' | 'diff' | 'portal' | 'hardware' | 'troubleshooting'>('simulator');
   const [copiedAll, setCopiedAll] = useState(false);
 
   // Simulator State
@@ -246,6 +249,22 @@ export default function App() {
             <Cpu className="w-3.5 h-3.5 text-emerald-400" />
             <span>Pinout &amp; Memory Specs</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('troubleshooting')}
+            className={`py-2.5 px-3.5 rounded-t-lg font-semibold flex items-center gap-2 transition-colors border-b-2 cursor-pointer ${
+              activeTab === 'troubleshooting'
+                ? 'border-amber-500 text-white bg-neutral-850'
+                : 'border-transparent text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900'
+            }`}
+          >
+            <Wrench className="w-3.5 h-3.5 text-amber-400" />
+            <span>Arduino IDE &amp; Build Fixes</span>
+            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-red-950 text-red-300 border border-red-800">
+              Fix
+            </span>
+          </button>
         </div>
       </header>
 
@@ -272,6 +291,8 @@ export default function App() {
         )}
 
         {activeTab === 'hardware' && <HardwareSpecs />}
+
+        {activeTab === 'troubleshooting' && <ArduinoTroubleshooting />}
       </main>
 
       {/* Footer */}
