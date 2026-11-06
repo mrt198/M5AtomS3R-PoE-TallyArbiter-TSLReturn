@@ -260,37 +260,39 @@ void renderScreen() {
     auto renderContent = [&](M5Canvas* g) {
       g->fillScreen(bgColor);
 
-      // Top Status Bar: Network Mode & Time
-      g->setTextSize(1);
-      g->setTextColor(textColor, bgColor);
-      g->setCursor(4, 4);
-      String netMode = (espConnect.getMode() == Mycila::ESPConnect::Mode::ETH) ? "ETH (PoE)" : "WiFi";
-      g->print(netMode);
+      // Clock: Larger font with seconds in a black box with white text, ABOVE DeviceName
+      g->fillRoundRect(4, 4, 120, 24, 4, TFT_BLACK);
+      g->drawRoundRect(4, 4, 120, 24, 4, TFT_DARKGRAY);
 
       struct tm timeinfo;
+      char timeStr[12] = "--:--:--";
       if (getLocalTime(&timeinfo, 10)) {
-        char timeStr[10];
-        strftime(timeStr, sizeof(timeStr), "%H:%M", &timeinfo);
-        g->setCursor(94, 4);
-        g->print(timeStr);
+        strftime(timeStr, sizeof(timeStr), "%H:%M:%S", &timeinfo);
       }
+      g->setTextDatum(middle_center);
+      g->setTextSize(2);
+      g->setTextColor(TFT_WHITE, TFT_BLACK);
+      g->drawString(timeStr, 64, 16);
 
-      // Divider line
-      g->drawFastHLine(2, 16, 124, textColor);
-
-      // Device Name in large font centered
+      // Device Name directly below clock box
       g->setTextDatum(middle_center);
       g->setTextSize(2);
       g->setTextColor(textColor, bgColor);
-      g->drawString(DeviceName, 64, 48);
+      g->drawString(DeviceName, 64, 46);
 
       // Tally Status Tag
       g->setTextSize(1);
-      g->drawRoundRect(14, 72, 100, 20, 4, textColor);
-      g->drawString(statusLabel, 64, 82);
+      g->drawRoundRect(14, 62, 100, 18, 4, textColor);
+      g->drawString(statusLabel, 64, 71);
 
-      // Bottom Cue & Channel Status
+      // Bottom Status: Network, Cue & TA
       g->setTextDatum(top_left);
+      g->setTextSize(1);
+      g->setCursor(6, 88);
+      g->setTextColor(textColor, bgColor);
+      String netMode = (espConnect.getMode() == Mycila::ESPConnect::Mode::ETH) ? "Net: PoE ETH" : "Net: Wi-Fi STA";
+      g->print(netMode);
+
       g->setCursor(6, 102);
       g->print("Cue CH1: ");
       if (ch1state) {

@@ -48,7 +48,8 @@ The M5StickC had two physical side buttons. The AtomS3R features a single tactil
 ### Option A: PlatformIO (Recommended)
 1. Install [PlatformIO IDE](https://platformio.org/) in VSCode.
 2. Clone or place this project folder in your workspace.
-3. Use the provided `platformio.ini`.
+3. Use the provided `platformio.ini` (which pins `m5stack/M5GFX @ 0.2.24` and `m5stack/M5Unified @ 0.2.2`).
+   *(Note: Avoid M5GFX 0.2.36 due to an upstream packaging bug with `result.hpp`). If you previously built with 0.2.36, delete the `.pio` directory first.*
 4. Connect M5AtomS3R via USB-C.
 5. Click **PlatformIO: Upload** (`pio run -t upload`).
 6. Open Serial Monitor at `115200` baud.

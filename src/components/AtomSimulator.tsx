@@ -51,6 +51,21 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
   const [clickTimer, setClickTimer] = useState<NodeJS.Timeout | null>(null);
   const [isPressing, setIsPressing] = useState(false);
   const [pressStartTime, setPressStartTime] = useState<number | null>(null);
+  const [currentTime, setCurrentTime] = useState<string>('10:42:15');
+
+  // Live clock displaying seconds, updating every second
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      const h = String(now.getHours()).padStart(2, '0');
+      const m = String(now.getMinutes()).padStart(2, '0');
+      const s = String(now.getSeconds()).padStart(2, '0');
+      setCurrentTime(`${h}:${m}:${s}`);
+    };
+    updateTime();
+    const timer = setInterval(updateTime, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const brightnessPercents = [15, 35, 65, 100];
 
@@ -197,36 +212,43 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                   {state.currentScreen === 0 ? (
                     // Screen 0: Tally & Cue
                     <div className="w-full h-full p-2 flex flex-col justify-between text-left font-mono">
-                      {/* Top Bar */}
-                      <div className="flex justify-between items-center text-[10px] font-semibold border-b border-current/30 pb-1">
-                        <span className="flex items-center gap-1">
-                          {state.networkMode === 'ETH' ? (
-                            <>
-                              <Network className="w-2.5 h-2.5" />
-                              <span>ETH (PoE)</span>
-                            </>
-                          ) : (
-                            <>
-                              <Wifi className="w-2.5 h-2.5" />
-                              <span>WiFi</span>
-                            </>
-                          )}
-                        </span>
-                        <span>10:42</span>
+                      {/* Clock: Larger font with seconds in black box with white text, ABOVE Cam 1 Pres */}
+                      <div className="w-full bg-black text-white border border-neutral-700/80 rounded py-1 px-1 text-center shadow-md">
+                        <div className="text-xs sm:text-sm font-mono font-bold tracking-widest leading-none text-white">
+                          {currentTime}
+                        </div>
                       </div>
 
-                      {/* Main Device Name */}
-                      <div className="my-auto text-center py-1">
-                        <div className="text-sm font-black tracking-wider uppercase leading-tight truncate px-1">
+                      {/* Main Device Name (Cam 1 Pres) directly below clock */}
+                      <div className="text-center py-0.5 my-auto">
+                        <div className="text-sm font-black tracking-wider uppercase leading-tight truncate px-1 drop-shadow-sm">
                           {state.deviceName || 'UNASSIGNED'}
                         </div>
-                        <div className="inline-block mt-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border border-current/40 bg-current/10">
+                        <div className="inline-block mt-1 px-2.5 py-0.5 rounded text-[9.5px] font-bold uppercase tracking-wider border border-current/40 bg-current/15 shadow-sm">
                           {getStatusLabel()}
                         </div>
                       </div>
 
-                      {/* Bottom Cue & TA Status */}
-                      <div className="border-t border-current/30 pt-1 text-[9px] flex flex-col gap-0.5">
+                      {/* Bottom Status: Network, Cue & TA */}
+                      <div className="border-t border-current/30 pt-1 text-[8.5px] flex flex-col gap-0.5">
+                        <div className="flex justify-between items-center">
+                          <span className="flex items-center gap-1 opacity-90">
+                            {state.networkMode === 'ETH' ? (
+                              <>
+                                <Network className="w-2.5 h-2.5" />
+                                <span>PoE ETH</span>
+                              </>
+                            ) : (
+                              <>
+                                <Wifi className="w-2.5 h-2.5" />
+                                <span>WiFi STA</span>
+                              </>
+                            )}
+                          </span>
+                          <span className="opacity-90">
+                            TA: <strong className="text-emerald-300">ONLINE</strong>
+                          </span>
+                        </div>
                         <div className="flex justify-between items-center">
                           <span className="opacity-80">Cue CH1:</span>
                           <span className={`font-bold px-1 rounded text-[8px] ${
@@ -234,10 +256,6 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                           }`}>
                             {state.isCueActive ? '● ACTIVE' : 'OFF'}
                           </span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="opacity-80">TA Server:</span>
-                          <span className="text-emerald-300 font-bold text-[8px]">ONLINE</span>
                         </div>
                       </div>
                     </div>
