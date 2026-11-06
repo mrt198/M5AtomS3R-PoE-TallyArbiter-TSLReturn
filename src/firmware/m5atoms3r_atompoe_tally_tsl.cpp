@@ -29,6 +29,7 @@
 
 #include <Arduino.h>
 #include <M5Unified.h>
+#inculde <ETH.h>
 
 // Enable Ethernet support in MycilaESPConnect before include (or via build_flags)
 #ifndef ESPCONNECT_ETH_SUPPORT
