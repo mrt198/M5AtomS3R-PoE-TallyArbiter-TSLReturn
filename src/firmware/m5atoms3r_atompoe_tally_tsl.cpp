@@ -592,11 +592,11 @@ void setup() {
   // Listens to network state transitions (Ethernet prioritized over Wi-Fi)
   espConnect.listen([](Mycila::ESPConnect::State previous, Mycila::ESPConnect::State current) {
     logger(String("[Network] State: ") + String((int)previous) + " -> " + String((int)current), "info");
-    if (current == Mycila::ESPConnect::State::CONNECTED) {
+    if (current == Mycila::ESPConnect::State::NETWORK_CONNECTED) {
       networkConnected = true;
       logger("[Network] Connected! IP: " + (espConnect.getMode() == Mycila::ESPConnect::Mode::ETH ? ETH.localIP().toString() : WiFi.localIP().toString()), "info");
       renderScreen();
-    } else {
+    } else if (current == Mycila::ESPConnect::State::NETWORK_DISCONNECTED) {
       networkConnected = false;
       renderScreen();
     }
@@ -605,9 +605,10 @@ void setup() {
   // Setup Web Server endpoints for MycilaConnect
   setupWebServer();
 
-  // Initialize network manager
+  // Initialize network manager (non-blocking, hostname & AP SSID)
   logger("[Network] Initializing MycilaESPConnect (Ethernet W5500 SPI)...", "info");
-  espConnect.begin();
+  espConnect.setBlocking(false);
+  espConnect.begin(listenerDeviceName.c_str(), listenerDeviceName.c_str());
 
   // Initialize NTP Time
   configTzTime(posix_time_zone_info, daylightOffset_sec, ntpServer1, ntpServer2);

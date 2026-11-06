@@ -532,17 +532,18 @@ void setup() {
 
   // Listen to network transitions
   espConnect.listen([](Mycila::ESPConnect::State previous, Mycila::ESPConnect::State current) {
-    if (current == Mycila::ESPConnect::State::CONNECTED) {
+    if (current == Mycila::ESPConnect::State::NETWORK_CONNECTED) {
       networkConnected = true;
       renderScreen();
-    } else {
+    } else if (current == Mycila::ESPConnect::State::NETWORK_DISCONNECTED) {
       networkConnected = false;
       renderScreen();
     }
   });
 
   setupWebServer();
-  espConnect.begin();
+  espConnect.setBlocking(false);
+  espConnect.begin(listenerDeviceName.c_str(), listenerDeviceName.c_str());
 
   configTzTime(posix_time_zone_info, daylightOffset_sec, ntpServer1, ntpServer2);
 
@@ -856,7 +857,7 @@ wm.autoConnect("m5StickC-");
 AsyncWebServer server(80);
 Mycila::ESPConnect espConnect(server);
 // Pinout flags: SCK=5, CS=6, MISO=7, MOSI=8
-espConnect.begin(); // Prioritizes wired Ethernet automatically`,
+espConnect.begin(hostname, apSSID); // Prioritizes wired Ethernet automatically`,
     explanation: "Replaced WiFiManager with MycilaESPConnect with W5500 SPI Ethernet. Prioritizes PoE Ethernet; if cable is disconnected, it seamlessly switches to Wi-Fi."
   },
   {
