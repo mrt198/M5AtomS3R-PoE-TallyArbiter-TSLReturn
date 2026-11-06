@@ -108,3 +108,19 @@ Mathieu Carbou (the creator of `MycilaESPConnect`) maintains the modern fork of 
 3. Open Arduino IDE > **Sketch > Include Library > Manage Libraries...**
 4. Search for `ESPAsyncWebServer` and install the version by **Mathieu Carbou** (or **ESP32Async**).
 5. Also ensure `AsyncTCP` is by **Mathieu Carbou** (v3.3.0+).
+
+---
+
+### Runtime Fixes (Clock Speed, Ethernet, and Port 80)
+
+1. **Slow Clock (5-Second Stutter / Delay):**
+   * **Cause:** When offline or when the server is unreachable, `SocketIOclient` (`socket.loop()`) attempts a blocking TCP connect with a 5000ms timeout per loop iteration.
+   * **Solution:** `socket.loop()` is now gated by `if (networkConnected)`. `connectToServer()` is deferred until an IP is assigned. The clock now refreshes smoothly every second.
+
+2. **W5500 Ethernet Initialization in Arduino IDE:**
+   * **Cause:** In Arduino IDE, preprocessor macros (e.g. `#define ESPCONNECT_ETH_SUPPORT`) in a sketch do not propagate to precompiled library object files like `MycilaESPConnect.cpp`.
+   * **Solution:** Explicit hardware initialization of the SPI bus (`SPI.begin(5, 7, 8, 6)`) and Ethernet driver (`ETH.begin(ETH_PHY_W5500, 1, 6, -1, -1, SPI)`) is performed directly in `setup()` with `WiFi.onEvent()` for DHCP and link monitoring.
+
+3. **Web Interface "Connection Refused":**
+   * **Cause:** `server.begin()` was omitted in `setupWebServer()`.
+   * **Solution:** `server.begin()` is now called explicitly, making the dashboard and REST API immediately accessible on port 80 at `http://<device-ip>/`.

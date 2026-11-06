@@ -288,6 +288,48 @@ mbedtls_md5_finish(&_ctx, (unsigned char *)_buf);`}
           </div>
         </div>
       </div>
+
+      {/* Runtime & Ethernet Fixes Summary */}
+      <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-xl space-y-4">
+        <div className="flex items-center gap-2">
+          <Sparkles className="w-5 h-5 text-emerald-400" />
+          <h3 className="text-sm font-bold text-white">
+            Resolved: 5-Second Clock Stutter, W5500 Ethernet, and Port 80 Connection Refused
+          </h3>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+          <div className="p-4 bg-neutral-950 rounded-xl border border-neutral-800 space-y-2">
+            <span className="text-amber-400 font-bold block">1. 5-Second Clock Stutter Fix</span>
+            <p className="text-neutral-300 leading-relaxed text-[11px]">
+              <strong>Cause:</strong> <code className="text-red-300">socket.loop()</code> was called unconditionally in <code className="text-neutral-200">loop()</code>. When offline, SocketIOclient blocks the MCU for 5000ms attempting TCP connect.
+            </p>
+            <p className="text-emerald-300 leading-relaxed text-[11px]">
+              <strong>Fix:</strong> Gated <code className="text-cyan-300">socket.loop()</code> with <code className="text-cyan-300">if (networkConnected)</code>. Clock now ticks smoothly every second without any delay!
+            </p>
+          </div>
+
+          <div className="p-4 bg-neutral-950 rounded-xl border border-neutral-800 space-y-2">
+            <span className="text-cyan-400 font-bold block">2. W5500 Ethernet Direct Init</span>
+            <p className="text-neutral-300 leading-relaxed text-[11px]">
+              <strong>Cause:</strong> In Arduino IDE, sketch <code className="text-amber-300">#define</code>s don&apos;t reach compiled library files, so <code className="text-red-300">ETH.begin()</code> was never called by MycilaESPConnect.
+            </p>
+            <p className="text-emerald-300 leading-relaxed text-[11px]">
+              <strong>Fix:</strong> Explicitly initialized <code className="text-cyan-300">SPI.begin(5, 7, 8, 6)</code> and <code className="text-cyan-300">ETH.begin(ETH_PHY_W5500, 1, 6, -1, -1, SPI)</code> with <code className="text-cyan-300">WiFi.onEvent()</code> DHCP listener.
+            </p>
+          </div>
+
+          <div className="p-4 bg-neutral-950 rounded-xl border border-neutral-800 space-y-2">
+            <span className="text-purple-400 font-bold block">3. Port 80 Connection Refused Fix</span>
+            <p className="text-neutral-300 leading-relaxed text-[11px]">
+              <strong>Cause:</strong> <code className="text-red-300">server.begin()</code> was missing from <code className="text-neutral-200">setupWebServer()</code>, so the kernel actively rejected incoming TCP packets with RST.
+            </p>
+            <p className="text-emerald-300 leading-relaxed text-[11px]">
+              <strong>Fix:</strong> <code className="text-cyan-300">server.begin()</code> is now called explicitly, making the dashboard and REST API live immediately on port 80.
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

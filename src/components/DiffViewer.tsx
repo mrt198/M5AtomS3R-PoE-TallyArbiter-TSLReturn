@@ -1,5 +1,5 @@
 import React from 'react';
-import { MIGRATION_DIFFS } from '../data/firmwareSources';
+import { MIGRATION_DIFFS, MigrationDiff } from '../data/firmwareSources';
 import { ArrowRight, CheckCircle2, AlertTriangle, Layers, Cpu, Radio, Zap } from 'lucide-react';
 
 export const DiffViewer: React.FC = () => {
@@ -68,7 +68,7 @@ export const DiffViewer: React.FC = () => {
 
       {/* Side-by-Side Detailed Code Comparisons */}
       <div className="space-y-6">
-        {MIGRATION_DIFFS.map((diff) => (
+        {MIGRATION_DIFFS.map((diff: MigrationDiff) => (
           <div 
             key={diff.category}
             className="bg-neutral-900 border border-neutral-800 rounded-2xl overflow-hidden shadow-xl"

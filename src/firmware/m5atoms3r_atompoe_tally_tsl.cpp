@@ -62,6 +62,8 @@
 #define ETH_PHY_RST -1
 #endif
 
+#include <SPI.h>
+#include <ETH.h>
 #include <WiFi.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
@@ -167,6 +169,7 @@ void showDeviceInfo();
 void renderScreen();
 void updateBrightness();
 void connectToServer();
+void disconnectFromServer();
 void socket_event(socketIOmessageType_t type, uint8_t *payload, size_t length);
 void socket_Connected(const char *payload, size_t length);
 void socket_Flash();
@@ -183,9 +186,42 @@ void printLocalTime();
 void logger(String strLog, String strType = "info");
 
 // ==========================================
+// Network Helper Utilities
+// ==========================================
+bool isEthernetActive() {
+  return ETH.linkUp() && ETH.localIP() != IPAddress(0, 0, 0, 0);
+}
+
+String getNetworkModeStr() {
+  if (isEthernetActive()) {
+    return "PoE Ethernet";
+  }
+  if (WiFi.status() == WL_CONNECTED) {
+    return "Wi-Fi STA";
+  }
+  return "Disconnected";
+}
+
+String getNetworkIPStr() {
+  if (isEthernetActive()) {
+    return ETH.localIP().toString();
+  }
+  if (WiFi.status() == WL_CONNECTED) {
+    return WiFi.localIP().toString();
+  }
+  return "0.0.0.0";
+}
+
+// ==========================================
 // TSL 3.1 UDP Packet Sender
 // ==========================================
 void sendtally(int channel, bool live) {
+  // CRITICAL: Guard against sending UDP when network is down
+  // Sending when offline causes ARP/socket timeouts and slows the main loop
+  if (!networkConnected) {
+    return;
+  }
+
   byte channelname[16];
 
   switch (channel) {
@@ -275,7 +311,8 @@ void renderScreen() {
 
       struct tm timeinfo;
       char timeStr[12] = "--:--:--";
-      if (getLocalTime(&timeinfo, 10)) {
+      // Check local time non-blocking (0ms timeout)
+      if (getLocalTime(&timeinfo, 0)) {
         strftime(timeStr, sizeof(timeStr), "%H:%M:%S", &timeinfo);
       }
       g->setTextDatum(middle_center);
@@ -299,7 +336,7 @@ void renderScreen() {
       g->setTextSize(1);
       g->setCursor(6, 88);
       g->setTextColor(textColor, bgColor);
-      String netMode = (espConnect.getMode() == Mycila::ESPConnect::Mode::ETH) ? "Net: PoE ETH" : "Net: Wi-Fi STA";
+      String netMode = String("Net: ") + getNetworkModeStr();
       g->print(netMode);
 
       g->setCursor(6, 102);
@@ -342,16 +379,12 @@ void renderScreen() {
 
       g->setTextColor(TFT_WHITE, TFT_BLACK);
       g->setCursor(4, 20);
-      String modeStr = (espConnect.getMode() == Mycila::ESPConnect::Mode::ETH) ? "Net: PoE Ethernet" : "Net: Wi-Fi STA";
+      String modeStr = String("Net: ") + getNetworkModeStr();
       g->println(modeStr);
 
       g->setCursor(4, 32);
       g->print("IP: ");
-      if (espConnect.getMode() == Mycila::ESPConnect::Mode::ETH) {
-        g->println(ETH.localIP().toString());
-      } else {
-        g->println(WiFi.localIP().toString());
-      }
+      g->println(getNetworkIPStr());
 
       g->setCursor(4, 44);
       g->print("TA IP: ");
@@ -446,9 +479,9 @@ void setupWebServer() {
     html += F("</strong> (");
     html += DeviceId;
     html += F(")</p><p>Network: <strong>");
-    html += (espConnect.getMode() == Mycila::ESPConnect::Mode::ETH) ? "PoE Ethernet (W5500)" : "Wi-Fi";
+    html += getNetworkModeStr();
     html += F("</strong> | IP: <strong>");
-    html += (espConnect.getMode() == Mycila::ESPConnect::Mode::ETH) ? ETH.localIP().toString() : WiFi.localIP().toString();
+    html += getNetworkIPStr();
     html += F("</strong></p><p>Double Buffering: <strong>");
     html += doubleBufferEnabled ? "Enabled (32KB Canvas)" : "Direct Mode";
     html += F("</strong></p></div><div class='card'>"
@@ -483,8 +516,8 @@ void setupWebServer() {
     obj["doubleBuffer"] = doubleBufferEnabled;
     obj["actualType"] = actualType;
     obj["actualColor"] = actualColor;
-    obj["mode"] = (espConnect.getMode() == Mycila::ESPConnect::Mode::ETH) ? "ETH" : "WIFI";
-    obj["ip"] = (espConnect.getMode() == Mycila::ESPConnect::Mode::ETH) ? ETH.localIP().toString() : WiFi.localIP().toString();
+    obj["mode"] = isEthernetActive() ? "ETH" : "WIFI";
+    obj["ip"] = getNetworkIPStr();
     request->send(200, "application/json", JSON.stringify(obj));
   });
 
@@ -520,6 +553,10 @@ void setupWebServer() {
     connectToServer();
     renderScreen();
   });
+
+  // CRITICAL: Explicitly start AsyncWebServer so port 80 listens immediately
+  server.begin();
+  logger("[WebServer] HTTP Server started listening on port 80", "info");
 }
 
 // ==========================================
@@ -599,25 +636,77 @@ void setup() {
     listenerDeviceName += macSuffix;
   }
 
-  // Setup MycilaESPConnect Network Manager
-  // Listens to network state transitions (Ethernet prioritized over Wi-Fi)
+  // 1. Setup Ethernet Network Event Handlers BEFORE ETH.begin()
+  WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info) {
+    switch (event) {
+      case ARDUINO_EVENT_ETH_START:
+        logger("[ETH] Hardware driver started", "info");
+        ETH.setHostname(listenerDeviceName.c_str());
+        break;
+      case ARDUINO_EVENT_ETH_CONNECTED:
+        logger("[ETH] Cable connected (Link UP)", "info");
+        break;
+      case ARDUINO_EVENT_ETH_GOT_IP:
+        logger(String("[ETH] IP Assigned (DHCP): ") + ETH.localIP().toString(), "info");
+        networkConnected = true;
+        udp.begin(atoi(tallyarbiter_TSLport));
+        connectToServer();
+        renderScreen();
+        break;
+      case ARDUINO_EVENT_ETH_LOST_IP:
+      case ARDUINO_EVENT_ETH_DISCONNECTED:
+        logger("[ETH] Cable disconnected (Link DOWN)", "info");
+        if (WiFi.status() != WL_CONNECTED) {
+          networkConnected = false;
+          disconnectFromServer();
+        }
+        renderScreen();
+        break;
+      case ARDUINO_EVENT_ETH_STOP:
+        logger("[ETH] Interface stopped", "info");
+        if (WiFi.status() != WL_CONNECTED) {
+          networkConnected = false;
+        }
+        break;
+      default:
+        break;
+    }
+  });
+
+  // 2. Explicitly initialize SPI and W5500 for AtomS3R + AtomPoE
+  // Ensures Ethernet works 100% in Arduino IDE (where library macro flags don't propagate)
+  logger("[ETH] Initializing W5500 SPI (SCK:5, CS:6, MISO:7, MOSI:8)...", "info");
+  SPI.begin(ETH_PHY_SPI_SCK, ETH_PHY_SPI_MISO, ETH_PHY_SPI_MOSI, ETH_PHY_CS);
+  if (ETH.begin(ETH_PHY_TYPE, ETH_PHY_ADDR, ETH_PHY_CS, ETH_PHY_IRQ, ETH_PHY_RST, SPI)) {
+    logger("[ETH] W5500 SPI Ethernet initialized. Waiting for PoE link / DHCP...", "info");
+  } else {
+    logger("[ETH] ERROR: ETH.begin returned false! Check AtomPoE hardware seating.", "error");
+  }
+
+  // 3. Setup MycilaESPConnect Network Manager
+  // Listens to network state transitions for Wi-Fi fallback & Captive Portal
   espConnect.listen([](Mycila::ESPConnect::State previous, Mycila::ESPConnect::State current) {
     logger(String("[Network] State: ") + String((int)previous) + " -> " + String((int)current), "info");
     if (current == Mycila::ESPConnect::State::NETWORK_CONNECTED) {
       networkConnected = true;
-      logger("[Network] Connected! IP: " + (espConnect.getMode() == Mycila::ESPConnect::Mode::ETH ? ETH.localIP().toString() : WiFi.localIP().toString()), "info");
+      logger("[Network] Connected! IP: " + getNetworkIPStr(), "info");
+      udp.begin(atoi(tallyarbiter_TSLport));
+      connectToServer();
       renderScreen();
     } else if (current == Mycila::ESPConnect::State::NETWORK_DISCONNECTED) {
-      networkConnected = false;
-      renderScreen();
+      if (!isEthernetActive()) {
+        networkConnected = false;
+        disconnectFromServer();
+        renderScreen();
+      }
     }
   });
 
-  // Setup Web Server endpoints for MycilaConnect
+  // 4. Setup Web Server endpoints & start listening on port 80
   setupWebServer();
 
-  // Initialize network manager (non-blocking, hostname & AP SSID)
-  logger("[Network] Initializing MycilaESPConnect (Ethernet W5500 SPI)...", "info");
+  // 5. Initialize network manager (non-blocking, hostname & AP SSID)
+  logger("[Network] Initializing MycilaESPConnect...", "info");
   espConnect.setBlocking(false);
   espConnect.begin(listenerDeviceName.c_str(), listenerDeviceName.c_str());
 
@@ -635,9 +724,6 @@ void setup() {
     MDNS.addService("http", "tcp", 80);
   }
 
-  // Connect to Tally Arbiter Server
-  connectToServer();
-
   // Initial Screen Render
   renderScreen();
 }
@@ -649,7 +735,13 @@ void loop() {
   M5.update();
   espConnect.loop();
   ArduinoOTA.handle();
-  socket.loop();
+
+  // CRITICAL: Only run socket.loop() when network is connected!
+  // If run when disconnected or server unreachable, SocketIOclient blocks the MCU
+  // for 5000ms attempting TCP connect, freezing the loop and clock!
+  if (networkConnected) {
+    socket.loop();
+  }
 
   // ----------------------------------------
   // Button Handling on AtomS3R Screen Button
@@ -658,7 +750,9 @@ void loop() {
   if (M5.BtnA.wasClicked()) {
     logger("[Button] Single Click: Toggle Cue CH1", "info");
     ch1state = !ch1state;
-    sendtally(1, ch1state);
+    if (networkConnected) {
+      sendtally(1, ch1state);
+    }
     renderScreen();
   }
 
@@ -690,11 +784,13 @@ void loop() {
   }
 
   // ----------------------------------------
-  // 1-Second TSL Keepalive / NTP Refresh
+  // Smooth 1-Second Clock & TSL Refresh
   // ----------------------------------------
   if (millis() - lastRefreshTime >= REFRESH_INTERVAL) {
-    lastRefreshTime += REFRESH_INTERVAL;
-    sendtally(1, ch1state);
+    lastRefreshTime = millis();
+    if (networkConnected) {
+      sendtally(1, ch1state);
+    }
     renderScreen();
   }
 }
@@ -713,9 +809,21 @@ void ws_emit(String event, const char *payload) {
 }
 
 void connectToServer() {
+  if (!networkConnected) {
+    logger("[TallyArbiter] Network not connected; deferring connectToServer()", "info");
+    return;
+  }
   logger(String("[TallyArbiter] Connecting to ") + tallyarbiter_host + ":" + tallyarbiter_port, "info");
   socket.onEvent(socket_event);
+  socket.setReconnectInterval(5000);
   socket.begin(tallyarbiter_host, atol(tallyarbiter_port));
+}
+
+void disconnectFromServer() {
+  if (socket.isConnected()) {
+    socket.disconnect();
+    logger("[TallyArbiter] Disconnected from server (Network link down)", "info");
+  }
 }
 
 void socket_event(socketIOmessageType_t type, uint8_t *payload, size_t length) {
