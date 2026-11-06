@@ -65,8 +65,16 @@ export const CPP_FIRMWARE_SOURCE = `/**
 #define ETH_PHY_RST -1
 #endif
 
-#include <MycilaESPConnect.h>
+#include <WiFi.h>
+#include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
+
+// Compatibility typedef: Ensures AsyncWebServerRequestPtr is defined for MycilaESPConnect
+#ifndef AsyncWebServerRequestPtr
+typedef AsyncWebServerRequest* AsyncWebServerRequestPtr;
+#endif
+
+#include <MycilaESPConnect.h>
 #include <WebSocketsClient.h>
 #include <SocketIOclient.h>
 #include <Arduino_JSON.h>
@@ -525,7 +533,7 @@ void setup() {
   preferences.end();
 
   uint8_t mac[6];
-  esp_read_mac(mac, ESP_MAC_WIFI_STA);
+  WiFi.macAddress(mac);
   char macSuffix[10];
   snprintf(macSuffix, sizeof(macSuffix), "%02X%02X%02X", mac[3], mac[4], mac[5]);
   if (!listenerDeviceName.endsWith(macSuffix)) {
