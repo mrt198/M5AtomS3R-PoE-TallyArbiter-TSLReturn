@@ -785,7 +785,8 @@ export const PLATFORMIO_INI = `; PlatformIO Project Configuration for M5Stack M5
 ; Tally Arbiter & TSL 3.1 UDP Listener with Double-Buffered M5Canvas & MycilaESPConnect
 
 [env:m5stack-atoms3r-poe]
-platform = espressif32 @ ^6.6.0
+; MycilaESPConnect with W5500 SPI Ethernet requires Arduino-ESP32 v3.x (ESP-IDF 5)
+platform = https://github.com/pioarduino/platform-espressif32/releases/download/55.03.311/platform-espressif32.zip
 board = esp32-s3-devkitc-1
 framework = arduino
 

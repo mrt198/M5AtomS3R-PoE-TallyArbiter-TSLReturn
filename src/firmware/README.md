@@ -56,8 +56,7 @@ The M5StickC had two physical side buttons. The AtomS3R features a single tactil
 
 ### Option B: Arduino IDE (v2.x)
 1. Add ESP32 board URL to **Preferences > Additional Boards Manager URLs**:
-   `https://espressif.github.io/arduino-esp32/package_esp32_index.json`
-2. Install **esp32** platform by Espressif (version 2.0.14 or 3.x).
+2. Install **esp32** platform by Espressif (version **3.0.0 or higher** — required for native `ETH_PHY_W5500` SPI Ethernet support).
 3. Install required libraries from Library Manager:
    * `M5Unified` & `M5GFX`
    * `MycilaESPConnect`
