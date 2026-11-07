@@ -124,3 +124,36 @@ Mathieu Carbou (the creator of `MycilaESPConnect`) maintains the modern fork of 
 3. **Web Interface "Connection Refused":**
    * **Cause:** `server.begin()` was omitted in `setupWebServer()`.
    * **Solution:** `server.begin()` is now called explicitly, making the dashboard and REST API immediately accessible on port 80 at `http://<device-ip>/`.
+
+---
+
+## 🎛️ 4 Operating Modes & Return Cue Routing
+
+The device can be configured via the web portal or REST API into any of 4 distinct operational roles:
+
+| Operating Mode | Network Dependency | Screen Button Action | TSL Control Byte | Incoming UDP Behavior |
+| :--- | :--- | :--- | :--- | :--- |
+| **`TP`** | Tally Arbiter Server | Toggles Program return cue | `0x32` (Red Tally) | Receives TA Socket.IO & TSL return packets |
+| **`Presenter`** | Tally Arbiter Server | Toggles Preview return cue | `0x31` (Green Tally) | Receives TA Socket.IO & TSL return packets |
+| **`TP_P2P`** | **Zero-Server** (Direct P2P) | Toggles Program to Presenter | `0x32` (Red Tally) | Flashes `>>> PRESENTER CUE! <<<` when Presenter cues |
+| **`Presenter_P2P`** | **Zero-Server** (Direct P2P) | Cues paired TP console | `0x31` (Green Tally) | Screen lights RED (Program) / GREEN (Preview) from TP |
+
+---
+
+## 🔍 Zero-Conf P2P Discovery & Pairing (mDNS & DNS-SD)
+
+When operating in **Presenter no Tally Arbiter** or **TP no Tally Arbiter** mode, devices communicate directly over UDP port `8910` without any external server or router configuration:
+
+1. **Service Registration:** Every device registers the DNS-SD service `_cuelx-tally._udp` on the local network along with TXT records:
+   * `role`: `presenter` or `tp`
+   * `mode`: `p2p` or `ta`
+   * `group`: Isolation group name (e.g. `Studio-1`, `Studio-2`)
+   * `name`: Device broadcast name (e.g. `M5AtomS3R-Presenter-01`)
+2. **One-Click Pairing:** 
+   * Navigate to `http://<device-ip>/` in your browser.
+   * Click **Scan for Local CueLX / TSL Peers**.
+   * A list of nearby units appears with their role and IP.
+   * Click **Pair** next to the desired peer unit. The target IP is saved to NVS Preferences.
+3. **Multi-Pair Coexistence:**
+   * By setting the **Pairing Group** (e.g., `Studio-1` on Pair A, and `Studio-2` on Pair B), multiple independent TP and Presenter units run concurrently on the same local subnet without cross-talk or cue collisions.
+

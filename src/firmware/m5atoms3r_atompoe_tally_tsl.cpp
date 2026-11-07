@@ -29,7 +29,6 @@
 
 #include <Arduino.h>
 #include <M5Unified.h>
-#inculde <ETH.h>
 
 // Enable Ethernet support in MycilaESPConnect before include (or via build_flags)
 #ifndef ESPCONNECT_ETH_SUPPORT
@@ -125,6 +124,17 @@ char tallyarbiter_port[6]     = "4455";
 char tallyarbiter_TSLport[6]  = "8910";
 bool LAST_MSG                 = false;
 
+// Operating Modes & Point-to-Point (P2P) Pairing
+// - "TP": Technical Producer with Tally Arbiter (button sends TSL Program)
+// - "Presenter": Presenter with Tally Arbiter (button sends TSL Preview)
+// - "Presenter_P2P": Presenter no Tally Arbiter (P2P direct to paired TP)
+// - "TP_P2P": TP no Tally Arbiter (P2P direct to paired Presenter)
+String operatingMode    = "TP";           // Default mode
+String pairingGroup     = "Studio-1";     // mDNS / DNS-SD pairing group
+String pairedTargetIP   = "";             // Target IP of paired unit in P2P mode
+String pairedTargetName = "";             // Target device name in P2P mode
+bool presenterCueActive = false;          // Active on TP unit when Presenter cues
+
 // Brightness levels (0-255 scale for M5Unified)
 const uint8_t brightnessLevels[] = { 40, 90, 160, 255 };
 uint8_t brightnessIndex = 1;
@@ -163,6 +173,7 @@ bool doubleBufferEnabled = false;
 
 // Forward Declarations
 void sendtally(int channel, bool live);
+void processIncomingTSL();
 void evaluateMode();
 void showSettings();
 void showDeviceInfo();
@@ -184,6 +195,23 @@ void ws_emit(String event, const char *payload = NULL);
 void setupWebServer();
 void printLocalTime();
 void logger(String strLog, String strType = "info");
+
+// Mode Helper Functions
+bool isP2PMode() {
+  return operatingMode == "Presenter_P2P" || operatingMode == "TP_P2P";
+}
+
+bool isPresenter() {
+  return operatingMode == "Presenter" || operatingMode == "Presenter_P2P";
+}
+
+bool isTP() {
+  return operatingMode == "TP" || operatingMode == "TP_P2P";
+}
+
+bool usesTallyArbiter() {
+  return !isP2PMode();
+}
 
 // ==========================================
 // Network Helper Utilities
@@ -223,33 +251,28 @@ void sendtally(int channel, bool live) {
   }
 
   byte channelname[16];
-
-  switch (channel) {
-    case 1: CH1Name.getBytes(channelname, 17); break;
-    case 2: CH2Name.getBytes(channelname, 17); break;
-    case 3: CH3Name.getBytes(channelname, 17); break;
-    case 4: CH4Name.getBytes(channelname, 17); break;
-    default: CH1Name.getBytes(channelname, 17); break;
-  }
+  String lbl = DeviceName;
+  if (lbl.length() == 0 || lbl == "Unassigned") lbl = listenerDeviceName;
+  while (lbl.length() < 16) lbl += " ";
+  lbl = lbl.substring(0, 16);
+  lbl.getBytes(channelname, 17);
 
   byte command[18];
   command[0] = (DISPLAY_ADDRESS + channel);
 
-  if (live) {
-    if (actualType == "\"program\"") {
-      command[1] = (FULLBRIGHT + REDTALLY);
-    } else if (actualType == "\"preview\"") {
-      command[1] = (FULLBRIGHT + REDTALLY + GREENTALLY);
+  // Presenter mode: sends TSL Preview (0x31) back when button pressed!
+  // TP mode: sends TSL Program (0x32) back (as it does now)!
+  if (isPresenter()) {
+    if (live) {
+      command[1] = (FULLBRIGHT + GREENTALLY); // 0x31 (Preview)
     } else {
-      command[1] = (FULLBRIGHT + REDTALLY);
+      command[1] = (FULLBRIGHT);              // 0x30 (Off)
     }
   } else {
-    if (actualType == "\"program\"") {
-      command[1] = (FULLBRIGHT);
-    } else if (actualType == "\"preview\"") {
-      command[1] = (FULLBRIGHT + GREENTALLY);
+    if (live) {
+      command[1] = (FULLBRIGHT + REDTALLY);   // 0x32 (Program)
     } else {
-      command[1] = (FULLBRIGHT);
+      command[1] = (FULLBRIGHT);              // 0x30 (Off)
     }
   }
 
@@ -257,11 +280,78 @@ void sendtally(int channel, bool live) {
     command[2 + i] = channelname[i];
   }
 
-  udp.beginPacket(tallyarbiter_host, atoi(tallyarbiter_TSLport));
+  // Routing destination
+  if (usesTallyArbiter()) {
+    udp.beginPacket(tallyarbiter_host, atoi(tallyarbiter_TSLport));
+  } else {
+    // Point-to-Point mode: send directly to paired peer IP, or subnet broadcast if unpaired
+    if (pairedTargetIP.length() > 0 && pairedTargetIP != "0.0.0.0") {
+      udp.beginPacket(pairedTargetIP.c_str(), atoi(tallyarbiter_TSLport));
+    } else {
+      udp.beginPacket(IPAddress(255, 255, 255, 255), atoi(tallyarbiter_TSLport));
+    }
+  }
+
   udp.write(command, 18);
   udp.endPacket();
 
-  logger(String("[TSL] Sent CH ") + String(channel) + (live ? " LIVE" : " OFF"), "info-quiet");
+  logger(String("[TSL] Sent CH ") + String(channel) + (live ? (isPresenter() ? " PREVIEW" : " PROGRAM") : " OFF") + (isP2PMode() ? " (P2P)" : " (TA)"), "info-quiet");
+}
+
+// ==========================================
+// TSL 3.1 UDP Packet Receiver (P2P & Direct)
+// ==========================================
+void processIncomingTSL() {
+  int packetSize = udp.parsePacket();
+  if (packetSize >= 18) {
+    byte packetBuffer[64];
+    int len = udp.read(packetBuffer, sizeof(packetBuffer));
+    if (len >= 18) {
+      byte ctrl = packetBuffer[1];
+      bool redTally = (ctrl & REDTALLY) != 0;
+      bool greenTally = (ctrl & GREENTALLY) != 0;
+
+      char textBuf[17];
+      memcpy(textBuf, packetBuffer + 2, 16);
+      textBuf[16] = '\0';
+      String senderName = String(textBuf);
+      senderName.trim();
+
+      IPAddress remoteIP = udp.remoteIP();
+
+      // In P2P standalone mode:
+      if (isP2PMode()) {
+        if (isPresenter()) {
+          // Presenter unit receives state updates from TP:
+          if (redTally) {
+            actualType = "\"program\"";
+            actualColor = "#FF0000";
+          } else if (greenTally) {
+            actualType = "\"preview\"";
+            actualColor = "#00FF00";
+          } else {
+            actualType = "";
+            actualColor = "";
+          }
+          if (senderName.length() > 0 && (pairedTargetName.length() == 0 || pairedTargetName == "Unassigned")) {
+            pairedTargetName = senderName;
+          }
+          renderScreen();
+        } else if (isTP()) {
+          // TP unit receives cue / preview call from Presenter:
+          if (greenTally) {
+            presenterCueActive = true;
+          } else {
+            presenterCueActive = false;
+          }
+          if (senderName.length() > 0 && (pairedTargetName.length() == 0 || pairedTargetName == "Unassigned")) {
+            pairedTargetName = senderName;
+          }
+          renderScreen();
+        }
+      }
+    }
+  }
 }
 
 // ==========================================
@@ -331,28 +421,56 @@ void renderScreen() {
       g->drawRoundRect(14, 62, 100, 18, 4, textColor);
       g->drawString(statusLabel, 64, 71);
 
-      // Bottom Status: Network, Cue & TA
+      // Bottom Status: Mode Badge, Cue & Peer / TA status
       g->setTextDatum(top_left);
       g->setTextSize(1);
-      g->setCursor(6, 88);
+      g->setCursor(4, 86);
       g->setTextColor(textColor, bgColor);
-      String netMode = String("Net: ") + getNetworkModeStr();
-      g->print(netMode);
+      String roleBadge = "";
+      if (operatingMode == "TP") roleBadge = "[TP (TA)]";
+      else if (operatingMode == "Presenter") roleBadge = "[PRES (TA)]";
+      else if (operatingMode == "Presenter_P2P") roleBadge = "[P2P PRES]";
+      else if (operatingMode == "TP_P2P") roleBadge = "[P2P TP]";
+      g->print(roleBadge);
 
-      g->setCursor(6, 102);
-      g->print("Cue CH1: ");
-      if (ch1state) {
-        g->setTextColor(TFT_RED, bgColor);
-        g->print("ACTIVE");
+      g->setCursor(68, 86);
+      if (isP2PMode()) {
+        g->print("Grp: " + pairingGroup.substring(0, 6));
       } else {
-        g->setTextColor(textColor, bgColor);
-        g->print("OFF");
+        g->print(socket.isConnected() ? "TA: ONLINE" : "TA: OFFLINE");
       }
 
-      g->setCursor(6, 114);
-      g->setTextColor(textColor, bgColor);
-      g->print("TA: ");
-      g->print(socket.isConnected() ? "ONLINE" : "OFFLINE");
+      g->setCursor(4, 98);
+      if (isPresenter()) {
+        g->print("Cue(PVW): ");
+        if (ch1state) {
+          g->setTextColor(TFT_GREEN, bgColor);
+          g->print("ACTIVE");
+        } else {
+          g->setTextColor(textColor, bgColor);
+          g->print("OFF");
+        }
+      } else {
+        g->print("Return(PRG): ");
+        if (ch1state) {
+          g->setTextColor(TFT_RED, bgColor);
+          g->print("ACTIVE");
+        } else {
+          g->setTextColor(textColor, bgColor);
+          g->print("OFF");
+        }
+      }
+
+      // Presenter Cue Alert on TP unit OR Network IP
+      g->setCursor(4, 112);
+      if (isTP() && presenterCueActive) {
+        g->setTextColor(TFT_YELLOW, TFT_RED);
+        g->print(">>> PRESENTER CUE! <<<");
+      } else {
+        g->setTextColor(textColor, bgColor);
+        String netStr = String("IP:") + getNetworkIPStr();
+        g->print(netStr.substring(0, 19));
+      }
     };
 
     if (doubleBufferEnabled) {
@@ -379,28 +497,33 @@ void renderScreen() {
 
       g->setTextColor(TFT_WHITE, TFT_BLACK);
       g->setCursor(4, 20);
-      String modeStr = String("Net: ") + getNetworkModeStr();
-      g->println(modeStr);
+      g->print("Mode: ");
+      g->println(operatingMode);
 
       g->setCursor(4, 32);
-      g->print("IP: ");
-      g->println(getNetworkIPStr());
+      g->print("Grp:  ");
+      g->println(pairingGroup);
 
       g->setCursor(4, 44);
-      g->print("TA IP: ");
-      g->println(tallyarbiter_host);
+      g->print("Peer: ");
+      g->println(pairedTargetIP.length() > 0 ? pairedTargetIP : "Unpaired (B-cast)");
 
       g->setCursor(4, 56);
-      g->print("TA Port: ");
-      g->println(tallyarbiter_port);
+      g->print("IP:   ");
+      g->println(getNetworkIPStr());
 
       g->setCursor(4, 68);
-      g->print("TSL Port: ");
-      g->println(tallyarbiter_TSLport);
+      g->print("TSL:  ");
+      g->print(tallyarbiter_TSLport);
+      g->println(isPresenter() ? " (PVW return)" : " (PRG return)");
 
       g->setCursor(4, 80);
-      g->print("Socket: ");
-      g->println(socket.isConnected() ? "Connected" : "Disconnected");
+      g->print("TA:   ");
+      if (usesTallyArbiter()) {
+        g->println(socket.isConnected() ? "Connected" : "Disconnected");
+      } else {
+        g->println("Disabled (P2P Mode)");
+      }
 
       g->setCursor(4, 92);
       g->print("D-Buffer: ");
@@ -460,53 +583,145 @@ void setupWebServer() {
   // Web Dashboard & Status Page
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
     String html = F("<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
-                    "<title>M5AtomS3R PoE Tally</title><style>"
-                    "body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#111827;color:#f3f4f6;padding:20px;max-width:540px;margin:auto}"
-                    ".card{background:#1f2937;border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 4px 6px rgba(0,0,0,0.3)}"
-                    "h1{font-size:20px;margin-bottom:4px;color:#60a5fa}h2{font-size:16px;color:#9ca3af;margin-top:0}"
-                    ".badge{display:inline-block;padding:4px 10px;border-radius:9999px;font-size:12px;font-weight:600}"
-                    ".badge-red{background:#dc2626;color:white}.badge-green{background:#16a34a;color:white}.badge-gray{background:#4b5563;color:white}"
-                    "label{display:block;margin-top:12px;font-size:13px;color:#9ca3af}"
-                    "input{width:100%;box-sizing:border-box;background:#374151;border:1px solid #4b5563;color:white;padding:10px;border-radius:6px;margin-top:4px}"
-                    "button{background:#2563eb;color:white;font-weight:600;padding:12px;border:none;border-radius:6px;width:100%;margin-top:16px;cursor:pointer}"
-                    "button:hover{background:#1d4ed8}"
+                    "<title>M5AtomS3R PoE Tally & P2P</title><style>"
+                    "body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#0f172a;color:#f1f5f9;padding:16px;max-width:580px;margin:auto}"
+                    ".card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 4px 6px rgba(0,0,0,0.3)}"
+                    "h1{font-size:20px;margin:0 0 4px 0;color:#38bdf8}h2{font-size:15px;color:#94a3b8;margin:0 0 14px 0;text-transform:uppercase;letter-spacing:0.05em}"
+                    ".badge{display:inline-block;padding:3px 8px;border-radius:9999px;font-size:11px;font-weight:700;margin-right:4px}"
+                    ".badge-blue{background:#0284c7;color:#fff}.badge-green{background:#16a34a;color:#fff}.badge-purple{background:#7c3aed;color:#fff}.badge-amber{background:#d97706;color:#fff}"
+                    "label{display:block;margin-top:12px;font-size:12px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:0.03em}"
+                    "input,select{width:100%;box-sizing:border-box;background:#0f172a;border:1px solid #475569;color:#f8fafc;padding:10px;border-radius:6px;margin-top:4px;font-size:14px}"
+                    "input:focus,select:focus{outline:none;border-color:#38bdf8}"
+                    "button{background:#0284c7;color:white;font-weight:600;padding:11px 14px;border:none;border-radius:6px;cursor:pointer;font-size:14px}"
+                    "button:hover{background:#0369a1}"
+                    ".btn-scan{background:#059669;width:100%;margin-top:10px}.btn-scan:hover{background:#047857}"
+                    ".btn-save{width:100%;margin-top:20px;background:#2563eb}.btn-save:hover{background:#1d4ed8}"
+                    ".peer-item{background:#0f172a;border:1px solid #334155;border-radius:8px;padding:10px;margin-top:8px;display:flex;justify-content:space-between;align-items:center}"
+                    ".peer-info{font-size:13px}.peer-name{font-weight:700;color:#e2e8f0}.peer-sub{font-size:11px;color:#94a3b8}"
+                    ".btn-pair{padding:6px 12px;font-size:12px;background:#7c3aed;border-radius:4px}.btn-pair:hover{background:#6d28d9}"
+                    ".grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}"
                     "</style></head><body>"
                     "<div class='card'>"
-                    "<h1>M5AtomS3R AtomPoE Tally</h1>"
-                    "<h2>TSL 3.1 & Tally Arbiter Listener</h2>"
-                    "<p>Device: <strong>");
+                    "<h1>M5AtomS3R PoE Tally</h1>"
+                    "<h2>Broadcast Cue & Tally Controller</h2>"
+                    "<p style='margin:4px 0;'>Device: <strong>");
     html += DeviceName;
     html += F("</strong> (");
-    html += DeviceId;
-    html += F(")</p><p>Network: <strong>");
+    html += listenerDeviceName;
+    html += F(")</p><p style='margin:4px 0;'>Current Mode: ");
+    if (operatingMode == "TP") html += F("<span class='badge badge-blue'>TP (Tally Arbiter)</span>");
+    else if (operatingMode == "Presenter") html += F("<span class='badge badge-green'>Presenter (Tally Arbiter)</span>");
+    else if (operatingMode == "TP_P2P") html += F("<span class='badge badge-purple'>TP Standalone (P2P)</span>");
+    else if (operatingMode == "Presenter_P2P") html += F("<span class='badge badge-amber'>Presenter Standalone (P2P)</span>");
+    html += F("</p><p style='margin:4px 0;'>Network: <strong>");
     html += getNetworkModeStr();
     html += F("</strong> | IP: <strong>");
     html += getNetworkIPStr();
-    html += F("</strong></p><p>Double Buffering: <strong>");
-    html += doubleBufferEnabled ? "Enabled (32KB Canvas)" : "Direct Mode";
+    html += F("</strong> | Double Buffer: <strong>");
+    html += doubleBufferEnabled ? "32KB OK" : "Direct";
     html += F("</strong></p></div><div class='card'>"
                     "<form action='/save' method='POST'>"
-                    "<h2>Configuration</h2>"
-                    "<label>Tally Arbiter Host / IP</label><input type='text' name='host' value='");
-    html += tallyarbiter_host;
-    html += F("'>"
-                    "<label>Socket.IO Port</label><input type='text' name='port' value='");
-    html += tallyarbiter_port;
-    html += F("'>"
-                    "<label>TSL 3.1 UDP Port</label><input type='text' name='tslport' value='");
+                    "<h2>Operating Mode & Role</h2>"
+                    "<label>Device Mode</label>"
+                    "<select name='mode'>"
+                    "<option value='TP'");
+    if (operatingMode == "TP") html += F(" selected");
+    html += F(">TP (Technical Producer with Tally Arbiter)</option>"
+              "<option value='Presenter'");
+    if (operatingMode == "Presenter") html += F(" selected");
+    html += F(">Presenter (with Tally Arbiter)</option>"
+              "<option value='TP_P2P'");
+    if (operatingMode == "TP_P2P") html += F(" selected");
+    html += F(">TP no Tally Arbiter (P2P Master)</option>"
+              "<option value='Presenter_P2P'");
+    if (operatingMode == "Presenter_P2P") html += F(" selected");
+    html += F(">Presenter no Tally Arbiter (P2P Slave)</option>"
+              "</select>"
+              "<div class='grid-2'>"
+              "<div><label>Pairing Group</label><input type='text' name='group' value='");
+    html += pairingGroup;
+    html += F("'></div>"
+              "<div><label>TSL 3.1 UDP Port</label><input type='text' name='tslport' value='");
     html += tallyarbiter_TSLport;
-    html += F("'>"
-                    "<label>Listener Device Name</label><input type='text' name='devicename' value='");
+    html += F("'></div></div>"
+              "<div class='grid-2'>"
+              "<div><label>Paired Peer IP (P2P Mode)</label><input type='text' id='peerip' name='pairedip' value='");
+    html += pairedTargetIP;
+    html += F("' placeholder='e.g. 192.168.1.50'></div>"
+              "<div><label>Paired Peer Name</label><input type='text' id='peername' name='pairedname' value='");
+    html += pairedTargetName;
+    html += F("' placeholder='e.g. Presenter-Cam1'></div></div>"
+              "<h2 style='margin-top:20px;'>Tally Arbiter Settings (If using TA)</h2>"
+              "<div class='grid-2'>"
+              "<div><label>Tally Arbiter Host / IP</label><input type='text' name='host' value='");
+    html += tallyarbiter_host;
+    html += F("'></div>"
+              "<div><label>Socket.IO Port</label><input type='text' name='port' value='");
+    html += tallyarbiter_port;
+    html += F("'></div></div>"
+              "<label>Listener Device Name</label><input type='text' name='devicename' value='");
     html += listenerDeviceName;
     html += F("'>"
-                    "<button type='submit'>Save & Reconnect</button>"
-                    "</form></div></body></html>");
+              "<button type='submit' class='btn-save'>Save Settings & Apply</button>"
+              "</form></div>"
+              "<div class='card'>"
+              "<h2>Zero-Conf P2P Discovery (mDNS / DNS-SD)</h2>"
+              "<p style='font-size:13px;color:#94a3b8;margin:0 0 10px 0;'>Discover and pair directly with other TP and Presenter units on this local subnet without running Tally Arbiter.</p>"
+              "<button type='button' class='btn-scan' onclick='scanPeers()'>Scan for Local CueLX / TSL Peers</button>"
+              "<div id='peers-list' style='margin-top:12px;'></div>"
+              "</div>"
+              "<script>"
+              "async function scanPeers(){"
+              "  const list = document.getElementById('peers-list');"
+              "  list.innerHTML = '<p style=\"color:#38bdf8;font-size:13px;\">Scanning network for _cuelx-tally._udp services...</p>';"
+              "  try {"
+              "    const res = await fetch('/api/discover');"
+              "    const peers = await res.json();"
+              "    if (!peers || peers.length === 0) {"
+              "      list.innerHTML = '<p style=\"color:#94a3b8;font-size:13px;\">No peers found. Ensure target units are powered on and on the same subnet.</p>';"
+              "      return;"
+              "    }"
+              "    let html = '';"
+              "    peers.forEach(p => {"
+              "      html += `<div class=\"peer-item\">"
+              "        <div class=\"peer-info\">"
+              "          <div class=\"peer-name\">${p.name || p.hostname} <span class=\"badge badge-purple\">${p.role || 'device'}</span></div>"
+              "          <div class=\"peer-sub\">IP: ${p.ip} | Port: ${p.port} | Group: ${p.group || 'default'}</div>"
+              "        </div>"
+              "        <button type=\"button\" class=\"btn-pair\" onclick=\"pairPeer('${p.ip}','${p.name || p.hostname}','${p.group || ''}')\">Pair</button>"
+              "      </div>`;"
+              "    });"
+              "    list.innerHTML = html;"
+              "  } catch(e) {"
+              "    list.innerHTML = '<p style=\"color:#ef4444;font-size:13px;\">Scan failed: ' + e.message + '</p>';"
+              "  }"
+              "}"
+              "async function pairPeer(ip, name, group){"
+              "  document.getElementById('peerip').value = ip;"
+              "  document.getElementById('peername').value = name;"
+              "  const fd = new FormData();"
+              "  fd.append('ip', ip);"
+              "  fd.append('name', name);"
+              "  if(group) fd.append('group', group);"
+              "  await fetch('/api/pair', { method: 'POST', body: fd });"
+              "  alert('Paired with ' + name + ' (' + ip + ')! Settings updated.');"
+              "}"
+              "</script>"
+              "</body></html>");
     request->send(200, "text/html", html);
   });
 
   // REST API: GET Config
   server.on("/api/config", HTTP_GET, [](AsyncWebServerRequest *request) {
     JSONVar obj;
+    obj["operatingMode"] = operatingMode;
+    obj["pairingGroup"] = pairingGroup;
+    obj["pairedTargetIP"] = pairedTargetIP;
+    obj["pairedTargetName"] = pairedTargetName;
+    obj["isPresenter"] = isPresenter();
+    obj["isTP"] = isTP();
+    obj["isP2P"] = isP2PMode();
+    obj["presenterCueActive"] = presenterCueActive;
     obj["host"] = tallyarbiter_host;
     obj["port"] = tallyarbiter_port;
     obj["tslPort"] = tallyarbiter_TSLport;
@@ -521,8 +736,78 @@ void setupWebServer() {
     request->send(200, "application/json", JSON.stringify(obj));
   });
 
+  // REST API: GET /api/discover - Scan for DNS-SD peers (_cuelx-tally._udp)
+  server.on("/api/discover", HTTP_GET, [](AsyncWebServerRequest *request) {
+    logger("[mDNS] Scanning for _cuelx-tally._udp peers...", "info");
+    int n = MDNS.queryService("cuelx-tally", "udp");
+    JSONVar arr;
+    for (int i = 0; i < n; ++i) {
+      // Don't include self
+      if (MDNS.IP(i).toString() == getNetworkIPStr()) {
+        continue;
+      }
+      JSONVar p;
+      p["hostname"] = MDNS.hostname(i);
+      p["ip"] = MDNS.IP(i).toString();
+      p["port"] = (int)MDNS.port(i);
+      #if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 2)
+      if (MDNS.hasTxt(i, "role"))  p["role"]  = MDNS.txt(i, "role");
+      if (MDNS.hasTxt(i, "group")) p["group"] = MDNS.txt(i, "group");
+      if (MDNS.hasTxt(i, "name"))  p["name"]  = MDNS.txt(i, "name");
+      if (MDNS.hasTxt(i, "mode"))  p["mode"]  = MDNS.txt(i, "mode");
+      #else
+      p["role"] = isPresenter() ? "tp" : "presenter";
+      p["group"] = pairingGroup;
+      p["name"] = MDNS.hostname(i);
+      #endif
+      arr[arr.length()] = p;
+    }
+    request->send(200, "application/json", JSON.stringify(arr));
+  });
+
+  // REST API: POST /api/pair - Directly pair target peer
+  server.on("/api/pair", HTTP_POST, [](AsyncWebServerRequest *request) {
+    if (request->hasParam("ip", true)) {
+      pairedTargetIP = request->getParam("ip", true)->value();
+    }
+    if (request->hasParam("name", true)) {
+      pairedTargetName = request->getParam("name", true)->value();
+    }
+    if (request->hasParam("group", true)) {
+      pairingGroup = request->getParam("group", true)->value();
+    }
+
+    preferences.begin("tally-arbiter", false);
+    preferences.putString("pairIP", pairedTargetIP);
+    preferences.putString("pairName", pairedTargetName);
+    preferences.putString("pairGroup", pairingGroup);
+    preferences.end();
+
+    logger(String("[P2P] Paired with: ") + pairedTargetName + " (" + pairedTargetIP + ") in group " + pairingGroup, "info");
+    renderScreen();
+
+    JSONVar res;
+    res["success"] = true;
+    res["pairedTargetIP"] = pairedTargetIP;
+    res["pairedTargetName"] = pairedTargetName;
+    res["pairingGroup"] = pairingGroup;
+    request->send(200, "application/json", JSON.stringify(res));
+  });
+
   // Form Save
   server.on("/save", HTTP_POST, [](AsyncWebServerRequest *request) {
+    if (request->hasParam("mode", true)) {
+      operatingMode = request->getParam("mode", true)->value();
+    }
+    if (request->hasParam("group", true)) {
+      pairingGroup = request->getParam("group", true)->value();
+    }
+    if (request->hasParam("pairedip", true)) {
+      pairedTargetIP = request->getParam("pairedip", true)->value();
+    }
+    if (request->hasParam("pairedname", true)) {
+      pairedTargetName = request->getParam("pairedname", true)->value();
+    }
     if (request->hasParam("host", true)) {
       String hostVal = request->getParam("host", true)->value();
       hostVal.toCharArray(tallyarbiter_host, 40);
@@ -540,17 +825,35 @@ void setupWebServer() {
     }
 
     preferences.begin("tally-arbiter", false);
+    preferences.putString("opMode", operatingMode);
+    preferences.putString("pairGroup", pairingGroup);
+    preferences.putString("pairIP", pairedTargetIP);
+    preferences.putString("pairName", pairedTargetName);
     preferences.putString("taHost", tallyarbiter_host);
     preferences.putString("taPort", tallyarbiter_port);
     preferences.putString("taTSLPort", tallyarbiter_TSLport);
     preferences.putString("taListenerName", listenerDeviceName);
     preferences.end();
 
-    request->send(200, "text/html", "<html><body style='background:#111;color:#fff;font-family:sans-serif;padding:30px;'>"
-                                    "<h2>Configuration Saved!</h2><p>Reconnecting to Tally Arbiter...</p>"
-                                    "<a href='/' style='color:#60a5fa;'>Return Home</a></body></html>");
+    // Re-register mDNS TXT records
+    MDNS.addServiceTxt("cuelx-tally", "udp", "role", isPresenter() ? "presenter" : "tp");
+    MDNS.addServiceTxt("cuelx-tally", "udp", "mode", isP2PMode() ? "p2p" : "ta");
+    MDNS.addServiceTxt("cuelx-tally", "udp", "group", pairingGroup.c_str());
+    MDNS.addServiceTxt("cuelx-tally", "udp", "name", listenerDeviceName.c_str());
 
-    connectToServer();
+    if (usesTallyArbiter()) {
+      connectToServer();
+    } else {
+      disconnectFromServer();
+    }
+
+    request->send(200, "text/html", "<html><body style='background:#0f172a;color:#f1f5f9;font-family:sans-serif;padding:30px;'>"
+                                    "<h2>Configuration Saved!</h2>"
+                                    "<p>Mode: <strong>" + operatingMode + "</strong></p>"
+                                    "<p>Group: <strong>" + pairingGroup + "</strong></p>"
+                                    "<p>Peer: <strong>" + (pairedTargetIP.length() > 0 ? pairedTargetIP : "Unpaired (Broadcast)") + "</strong></p>"
+                                    "<a href='/' style='color:#38bdf8;text-decoration:none;font-weight:600;'>Return to Dashboard</a></body></html>");
+
     renderScreen();
   });
 
@@ -613,6 +916,18 @@ void setup() {
   if (preferences.getString("devicename").length() > 0) {
     DeviceName = preferences.getString("devicename");
   }
+  if (preferences.getString("opMode").length() > 0) {
+    operatingMode = preferences.getString("opMode");
+  }
+  if (preferences.getString("pairGroup").length() > 0) {
+    pairingGroup = preferences.getString("pairGroup");
+  }
+  if (preferences.getString("pairIP").length() > 0) {
+    pairedTargetIP = preferences.getString("pairIP");
+  }
+  if (preferences.getString("pairName").length() > 0) {
+    pairedTargetName = preferences.getString("pairName");
+  }
   if (preferences.getString("taHost").length() > 0) {
     preferences.getString("taHost").toCharArray(tallyarbiter_host, 40);
   }
@@ -650,7 +965,9 @@ void setup() {
         logger(String("[ETH] IP Assigned (DHCP): ") + ETH.localIP().toString(), "info");
         networkConnected = true;
         udp.begin(atoi(tallyarbiter_TSLport));
-        connectToServer();
+        if (usesTallyArbiter()) {
+          connectToServer();
+        }
         renderScreen();
         break;
       case ARDUINO_EVENT_ETH_LOST_IP:
@@ -691,7 +1008,9 @@ void setup() {
       networkConnected = true;
       logger("[Network] Connected! IP: " + getNetworkIPStr(), "info");
       udp.begin(atoi(tallyarbiter_TSLport));
-      connectToServer();
+      if (usesTallyArbiter()) {
+        connectToServer();
+      }
       renderScreen();
     } else if (current == Mycila::ESPConnect::State::NETWORK_DISCONNECTED) {
       if (!isEthernetActive()) {
@@ -718,10 +1037,16 @@ void setup() {
   ArduinoOTA.setPassword("tallyarbiter");
   ArduinoOTA.begin();
 
-  // Initialize mDNS
+  // Initialize mDNS & register DNS-SD service for local P2P discovery
   if (MDNS.begin(mdnsdotlocalurl.c_str())) {
     MDNS.addService("CueLX", "tcp", 80);
     MDNS.addService("http", "tcp", 80);
+    MDNS.addService("cuelx-tally", "udp", atoi(tallyarbiter_TSLport));
+    MDNS.addServiceTxt("cuelx-tally", "udp", "role", isPresenter() ? "presenter" : "tp");
+    MDNS.addServiceTxt("cuelx-tally", "udp", "mode", isP2PMode() ? "p2p" : "ta");
+    MDNS.addServiceTxt("cuelx-tally", "udp", "group", pairingGroup.c_str());
+    MDNS.addServiceTxt("cuelx-tally", "udp", "name", listenerDeviceName.c_str());
+    logger(String("[mDNS] Service _cuelx-tally._udp registered. Group: ") + pairingGroup + ", Role: " + (isPresenter() ? "Presenter" : "TP"), "info");
   }
 
   // Initial Screen Render
@@ -736,10 +1061,13 @@ void loop() {
   espConnect.loop();
   ArduinoOTA.handle();
 
-  // CRITICAL: Only run socket.loop() when network is connected!
+  // Handle incoming TSL 3.1 UDP packets (bidirectional cues and tally)
+  processIncomingTSL();
+
+  // CRITICAL: Only run socket.loop() when network is connected and Tally Arbiter mode is active!
   // If run when disconnected or server unreachable, SocketIOclient blocks the MCU
   // for 5000ms attempting TCP connect, freezing the loop and clock!
-  if (networkConnected) {
+  if (networkConnected && usesTallyArbiter()) {
     socket.loop();
   }
 

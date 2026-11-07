@@ -26,6 +26,11 @@ export interface SimulatorState {
   taPort: string;
   tslPort: string;
   flashActive: boolean;
+  operatingMode: 'TP' | 'Presenter' | 'TP_P2P' | 'Presenter_P2P';
+  pairingGroup: string;
+  pairedTargetIP: string;
+  pairedTargetName: string;
+  presenterCueActive: boolean;
 }
 
 interface AtomSimulatorProps {
@@ -212,7 +217,7 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                   {state.currentScreen === 0 ? (
                     // Screen 0: Tally & Cue
                     <div className="w-full h-full p-2 flex flex-col justify-between text-left font-mono">
-                      {/* Clock: Larger font with seconds in black box with white text, ABOVE Cam 1 Pres */}
+                      {/* Clock: Larger font with seconds in black box with white text, ABOVE Device Name */}
                       <div className="w-full bg-black text-white border border-neutral-700/80 rounded py-1 px-1 text-center shadow-md">
                         <div className="text-xs sm:text-sm font-mono font-bold tracking-widest leading-none text-white">
                           {currentTime}
@@ -224,39 +229,54 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                         <div className="text-sm font-black tracking-wider uppercase leading-tight truncate px-1 drop-shadow-sm">
                           {state.deviceName || 'UNASSIGNED'}
                         </div>
-                        <div className="inline-block mt-1 px-2.5 py-0.5 rounded text-[9.5px] font-bold uppercase tracking-wider border border-current/40 bg-current/15 shadow-sm">
+                        <div className="inline-block mt-0.5 px-2.5 py-0.5 rounded text-[9.5px] font-bold uppercase tracking-wider border border-current/40 bg-current/15 shadow-sm">
                           {getStatusLabel()}
                         </div>
                       </div>
 
-                      {/* Bottom Status: Network, Cue & TA */}
+                      {/* Bottom Status: Mode Badge, Cue & Peer / TA */}
                       <div className="border-t border-current/30 pt-1 text-[8.5px] flex flex-col gap-0.5">
-                        <div className="flex justify-between items-center">
-                          <span className="flex items-center gap-1 opacity-90">
-                            {state.networkMode === 'ETH' ? (
-                              <>
-                                <Network className="w-2.5 h-2.5" />
-                                <span>PoE ETH</span>
-                              </>
-                            ) : (
-                              <>
-                                <Wifi className="w-2.5 h-2.5" />
-                                <span>WiFi STA</span>
-                              </>
-                            )}
+                        <div className="flex justify-between items-center font-bold">
+                          <span>
+                            {state.operatingMode === 'TP' && '[TP (TA)]'}
+                            {state.operatingMode === 'Presenter' && '[PRES (TA)]'}
+                            {state.operatingMode === 'TP_P2P' && '[P2P TP]'}
+                            {state.operatingMode === 'Presenter_P2P' && '[P2P PRES]'}
                           </span>
-                          <span className="opacity-90">
-                            TA: <strong className="text-emerald-300">ONLINE</strong>
+                          <span className="opacity-90 font-normal">
+                            {state.operatingMode.includes('P2P')
+                              ? `Grp: ${state.pairingGroup.slice(0, 8)}`
+                              : (state.networkMode === 'ETH' ? 'TA: ONLINE' : 'TA: OFFLINE')}
                           </span>
                         </div>
+
                         <div className="flex justify-between items-center">
-                          <span className="opacity-80">Cue CH1:</span>
+                          <span className="opacity-80">
+                            {state.operatingMode === 'Presenter' || state.operatingMode === 'Presenter_P2P'
+                              ? 'Cue(PVW):'
+                              : 'Return(PRG):'}
+                          </span>
                           <span className={`font-bold px-1 rounded text-[8px] ${
-                            state.isCueActive ? 'bg-red-950 text-red-200 border border-red-500' : 'opacity-70'
+                            state.isCueActive 
+                              ? (state.operatingMode === 'Presenter' || state.operatingMode === 'Presenter_P2P'
+                                  ? 'bg-emerald-950 text-emerald-300 border border-emerald-500' 
+                                  : 'bg-red-950 text-red-200 border border-red-500')
+                              : 'opacity-70'
                           }`}>
                             {state.isCueActive ? '● ACTIVE' : 'OFF'}
                           </span>
                         </div>
+
+                        {/* Presenter Cue Alert on TP unit OR Network IP */}
+                        {(state.operatingMode === 'TP' || state.operatingMode === 'TP_P2P') && state.presenterCueActive ? (
+                          <div className="bg-red-600 text-yellow-300 text-[8px] font-black tracking-tighter px-0.5 text-center animate-pulse rounded">
+                            &gt;&gt;&gt; PRESENTER CUE! &lt;&lt;&lt;
+                          </div>
+                        ) : (
+                          <div className="opacity-80 text-[8px] truncate">
+                            IP: {state.networkMode === 'ETH' ? '192.168.1.185' : '192.168.1.92'}
+                          </div>
+                        )}
                       </div>
                     </div>
                   ) : (
@@ -266,13 +286,15 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                         <div className="text-cyan-400 font-bold border-b border-neutral-700 pb-0.5 text-[9px]">
                           ATOM S3R DIAGNOSTICS
                         </div>
-                        <div className="mt-1 space-y-0.5 text-neutral-300 text-[8.5px]">
-                          <div>Net: <span className="text-emerald-400">{state.networkMode === 'ETH' ? 'PoE Ethernet' : 'Wi-Fi STA'}</span></div>
-                          <div>IP: <span className="text-white">{state.networkMode === 'ETH' ? '192.168.1.185' : '192.168.1.92'}</span></div>
-                          <div>TA IP: <span className="text-white">{state.taHost}</span></div>
-                          <div>TA Port: <span className="text-white">{state.taPort}</span></div>
-                          <div>TSL Port: <span className="text-white">{state.tslPort}</span></div>
-                          <div>Socket: <span className="text-emerald-400">Connected</span></div>
+                        <div className="mt-1 space-y-0.5 text-neutral-300 text-[8px]">
+                          <div>Mode: <span className="text-amber-400 font-bold">{state.operatingMode}</span></div>
+                          <div>Grp:  <span className="text-white">{state.pairingGroup}</span></div>
+                          <div>Peer: <span className="text-cyan-300 truncate">{state.pairedTargetIP || 'Unpaired (B-cast)'}</span></div>
+                          <div>IP:   <span className="text-white">{state.networkMode === 'ETH' ? '192.168.1.185' : '192.168.1.92'}</span></div>
+                          <div>TSL:  <span className="text-emerald-400">{state.tslPort} ({state.operatingMode.includes('Presenter') ? 'PVW' : 'PRG'})</span></div>
+                          <div>TA:   <span className={state.operatingMode.includes('P2P') ? 'text-neutral-500' : 'text-emerald-400'}>
+                            {state.operatingMode.includes('P2P') ? 'Disabled (P2P)' : 'Connected'}
+                          </span></div>
                           <div>D-Buffer: <span className="text-emerald-400">32KB (OK)</span></div>
                           <div>Free PSRAM: <span className="text-white">8,112 KB</span></div>
                         </div>
@@ -344,6 +366,157 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
 
       {/* Simulator Control Board */}
       <div className="lg:col-span-7 space-y-6">
+        {/* Operating Mode & P2P Discovery Controls */}
+        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-xl">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-semibold text-neutral-200 uppercase tracking-wider flex items-center gap-2">
+              <ArrowRightLeft className="w-4 h-4 text-cyan-400" />
+              <span>Operating Mode & Return Cue Routing</span>
+            </h3>
+            <span className="text-xs px-2.5 py-0.5 rounded-full font-mono font-bold bg-neutral-800 text-neutral-300 border border-neutral-700">
+              {state.operatingMode}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+            <button
+              type="button"
+              onClick={() => setState(prev => ({ ...prev, operatingMode: 'TP', presenterCueActive: false }))}
+              className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                state.operatingMode === 'TP'
+                  ? 'bg-blue-950/60 text-white border-blue-500 shadow-lg shadow-blue-950/50'
+                  : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-neutral-700'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-xs font-mono text-blue-400">TP (Tally Arbiter)</span>
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-900/50 text-blue-300">Red 0x32</span>
+              </div>
+              <p className="text-[11px] text-neutral-400 mt-1">
+                Technical Producer mode with TA server. Single click sends <strong>TSL Program (0x32)</strong>.
+              </p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setState(prev => ({ ...prev, operatingMode: 'Presenter', presenterCueActive: false }))}
+              className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                state.operatingMode === 'Presenter'
+                  ? 'bg-emerald-950/60 text-white border-emerald-500 shadow-lg shadow-emerald-950/50'
+                  : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-neutral-700'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-xs font-mono text-emerald-400">Presenter (Tally Arbiter)</span>
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-900/50 text-emerald-300">Green 0x31</span>
+              </div>
+              <p className="text-[11px] text-neutral-400 mt-1">
+                Presenter mode with TA server. Single click sends <strong>TSL Preview (0x31)</strong> return cue.
+              </p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setState(prev => ({ ...prev, operatingMode: 'TP_P2P' }))}
+              className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                state.operatingMode === 'TP_P2P'
+                  ? 'bg-purple-950/60 text-white border-purple-500 shadow-lg shadow-purple-950/50'
+                  : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-neutral-700'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-xs font-mono text-purple-400">TP no Tally Arbiter (P2P)</span>
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-purple-900/50 text-purple-300">P2P Master</span>
+              </div>
+              <p className="text-[11px] text-neutral-400 mt-1">
+                Direct peer link. Controls presenter tally and receives Presenter cue notifications.
+              </p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setState(prev => ({ ...prev, operatingMode: 'Presenter_P2P' }))}
+              className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                state.operatingMode === 'Presenter_P2P'
+                  ? 'bg-amber-950/60 text-white border-amber-500 shadow-lg shadow-amber-950/50'
+                  : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-neutral-700'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-xs font-mono text-amber-400">Presenter no TA (P2P)</span>
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-900/50 text-amber-300">P2P Slave</span>
+              </div>
+              <p className="text-[11px] text-neutral-400 mt-1">
+                Zero-server standalone unit. Automatically discovers paired TP via mDNS DNS-SD.
+              </p>
+            </button>
+          </div>
+
+          {/* Group and P2P Peer Parameters */}
+          <div className="p-3.5 bg-neutral-950 rounded-xl border border-neutral-800 mb-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-mono">
+            <div>
+              <span className="text-neutral-500 block text-[10px]">PAIRING GROUP (ISOLATION):</span>
+              <input 
+                type="text" 
+                value={state.pairingGroup}
+                onChange={(e) => setState(prev => ({ ...prev, pairingGroup: e.target.value }))}
+                className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-white font-bold mt-1 text-xs"
+              />
+            </div>
+            <div>
+              <span className="text-neutral-500 block text-[10px]">PAIRED PEER TARGET:</span>
+              <span className="text-cyan-400 font-bold block mt-2 truncate">
+                {state.pairedTargetName} ({state.pairedTargetIP})
+              </span>
+            </div>
+            <div>
+              <span className="text-neutral-500 block text-[10px]">TSL 3.1 CUE BYTE:</span>
+              <span className="text-emerald-400 font-bold block mt-2">
+                {state.operatingMode.includes('Presenter') ? '0x31 (Preview Return)' : '0x32 (Program Return)'}
+              </span>
+            </div>
+          </div>
+
+          {/* Mode-Specific Interaction Testing */}
+          <div className="flex flex-wrap gap-2.5 pt-3 border-t border-neutral-800">
+            {(state.operatingMode === 'TP' || state.operatingMode === 'TP_P2P') ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, presenterCueActive: !prev.presenterCueActive }))}
+                  className={`px-3 py-2 rounded-lg text-xs font-mono font-semibold flex items-center gap-1.5 border transition-all cursor-pointer ${
+                    state.presenterCueActive
+                      ? 'bg-red-600 text-yellow-300 border-yellow-400 animate-pulse'
+                      : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border-neutral-700'
+                  }`}
+                >
+                  <Radio className="w-3.5 h-3.5 text-yellow-400" />
+                  <span>{state.presenterCueActive ? 'Dismiss Presenter Cue' : 'Simulate Incoming Presenter Cue (0x31)'}</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, tallyState: 'program' }))}
+                  className="px-3 py-2 bg-red-950 hover:bg-red-900 text-red-200 rounded-lg text-xs font-mono font-semibold flex items-center gap-1.5 border border-red-800 cursor-pointer"
+                >
+                  <span className="w-2 h-2 rounded-full bg-red-400" />
+                  <span>Simulate TP Live Program (0x32 Red)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, tallyState: 'preview' }))}
+                  className="px-3 py-2 bg-emerald-950 hover:bg-emerald-900 text-emerald-200 rounded-lg text-xs font-mono font-semibold flex items-center gap-1.5 border border-emerald-800 cursor-pointer"
+                >
+                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                  <span>Simulate TP Preview (0x31 Green)</span>
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
         {/* Tally State Controls */}
         <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6">
           <h3 className="text-sm font-semibold text-neutral-200 uppercase tracking-wider mb-4 flex items-center gap-2">

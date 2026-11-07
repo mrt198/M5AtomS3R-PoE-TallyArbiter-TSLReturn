@@ -42,6 +42,11 @@ export default function App() {
     taPort: '4455',
     tslPort: '8910',
     flashActive: false,
+    operatingMode: 'TP',
+    pairingGroup: 'Studio-1',
+    pairedTargetIP: '192.168.1.120',
+    pairedTargetName: 'Presenter-Cam1',
+    presenterCueActive: false,
   });
 
   // Track simulated TSL UDP transmission
@@ -53,7 +58,7 @@ export default function App() {
     live: boolean;
   } | null>({
     hex: '01 32 52 33 20 50 72 65 73 20 20 20 20 20 20 20 20 20',
-    decoded: 'Addr:0x01 | Ctrl:0x32 (Red Tally) | Text:"R3 Pres         "',
+    decoded: 'Addr:0x01 | Ctrl:0x32 (Red Tally - Program Return) | Text:"R3 Pres         "',
     timestamp: '10:42:15',
     channel: 1,
     live: true
@@ -71,16 +76,25 @@ export default function App() {
     // Address byte
     const addrHex = (0x00 + channel).toString(16).padStart(2, '0').toUpperCase();
     
-    // Control byte
-    let ctrlByte = 0x30; // FULLBRIGHT
-    if (live) {
-      if (simState.tallyState === 'program') ctrlByte = 0x30 + 0x02; // FULLBRIGHT + REDTALLY (0x32)
-      else if (simState.tallyState === 'preview') ctrlByte = 0x30 + 0x02 + 0x01; // RED + GREEN (0x33)
-      else ctrlByte = 0x30 + 0x02;
+    // Control byte:
+    // Presenter mode sends TSL Preview (0x31) on button click
+    // TP mode sends TSL Program (0x32) on button click
+    const isPresenter = simState.operatingMode === 'Presenter' || simState.operatingMode === 'Presenter_P2P';
+    let ctrlByte = 0x30; // FULLBRIGHT (Off)
+    let cueDescription = 'Standby / Off';
+
+    if (isPresenter) {
+      if (live) {
+        ctrlByte = 0x30 + 0x01; // 0x31: FULLBRIGHT + GREENTALLY (Preview cue)
+        cueDescription = 'Preview Return (0x31 Green)';
+      }
     } else {
-      if (simState.tallyState === 'preview') ctrlByte = 0x30 + 0x01; // GREENTALLY (0x31)
-      else ctrlByte = 0x30;
+      if (live) {
+        ctrlByte = 0x30 + 0x02; // 0x32: FULLBRIGHT + REDTALLY (Program return)
+        cueDescription = 'Program Return (0x32 Red)';
+      }
     }
+
     const ctrlHex = ctrlByte.toString(16).padStart(2, '0').toUpperCase();
 
     // 16 ASCII bytes
@@ -94,7 +108,7 @@ export default function App() {
 
     setLastTslPacket({
       hex: fullHex,
-      decoded: `Addr:0x${addrHex} | Ctrl:0x${ctrlHex} | Text:"${name}"`,
+      decoded: `Addr:0x${addrHex} | Ctrl:0x${ctrlHex} (${cueDescription}) | Text:"${name}"`,
       timestamp: timeStr,
       channel,
       live
