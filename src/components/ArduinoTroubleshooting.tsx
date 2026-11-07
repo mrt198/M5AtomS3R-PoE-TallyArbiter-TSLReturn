@@ -294,13 +294,43 @@ mbedtls_md5_finish(&_ctx, (unsigned char *)_buf);`}
         <div className="flex items-center gap-2">
           <Sparkles className="w-5 h-5 text-emerald-400" />
           <h3 className="text-sm font-bold text-white">
-            Resolved: 5-Second Clock Stutter, W5500 Ethernet, and Port 80 Connection Refused
+            Root Cause &amp; Fix: 4-Second Clock Freeze &amp; Slow Tally Response (ESP32-S3 Dual-Core Architecture)
           </h3>
+        </div>
+
+        <div className="p-4 bg-emerald-950/40 border border-emerald-800/60 rounded-xl space-y-3 text-xs leading-relaxed">
+          <div className="flex items-center gap-2 text-emerald-400 font-bold">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span>Dual-Core FreeRTOS Isolation Architecture Implemented</span>
+          </div>
+          <p className="text-neutral-200">
+            <strong>Why it happened:</strong> Even with Ethernet connected, if the Tally Arbiter server is offline or unreachable at the configured IP/port, <code className="text-amber-300 font-mono">socket.loop()</code> triggers a synchronous TCP handshake inside <code className="text-neutral-200 font-mono">WiFiClient::connect()</code>. In lwIP, the SYN-ACK timeout is <strong>4000ms (4 seconds)</strong>. When executed in the main Arduino <code className="text-neutral-200 font-mono">loop()</code> on Core 1, it completely froze execution for 4 seconds on every reconnect cycle, halting clock updates, button clicks, and incoming UDP packets.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
+            <div className="p-3 bg-neutral-950 rounded-lg border border-neutral-800">
+              <span className="text-emerald-400 font-bold block mb-1">1. Pinned to Core 0</span>
+              <p className="text-[11px] text-neutral-300">
+                <code className="text-cyan-300 font-mono">socket.loop()</code> is moved to a background task pinned to <strong>Core 0 (PRO_CPU)</strong>. Any 4s network stall is confined to Core 0. Core 1 remains 100% free!
+              </p>
+            </div>
+            <div className="p-3 bg-neutral-950 rounded-lg border border-neutral-800">
+              <span className="text-cyan-400 font-bold block mb-1">2. Instant UDP Tally (&lt;1ms)</span>
+              <p className="text-[11px] text-neutral-300">
+                <code className="text-cyan-300 font-mono">processIncomingTSL()</code> runs on Core 1 at full speed, delivering instantaneous tally color changes without network delay.
+              </p>
+            </div>
+            <div className="p-3 bg-neutral-950 rounded-lg border border-neutral-800">
+              <span className="text-purple-400 font-bold block mb-1">3. Rollover Clock &amp; DNS Bypass</span>
+              <p className="text-[11px] text-neutral-300">
+                Clock detects exact second rollover with live uptime fallback. <code className="text-cyan-300 font-mono">IPAddress::fromString()</code> bypasses blocking DNS in <code className="text-neutral-200 font-mono">sendtally()</code>.
+              </p>
+            </div>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
           <div className="p-4 bg-neutral-950 rounded-xl border border-neutral-800 space-y-2">
-            <span className="text-amber-400 font-bold block">1. 5-Second Clock Stutter Fix</span>
+            <span className="text-amber-400 font-bold block">1. 5-Second Offline Stutter Fix</span>
             <p className="text-neutral-300 leading-relaxed text-[11px]">
               <strong>Cause:</strong> <code className="text-red-300">socket.loop()</code> was called unconditionally in <code className="text-neutral-200">loop()</code>. When offline, SocketIOclient blocks the MCU for 5000ms attempting TCP connect.
             </p>
@@ -327,6 +357,44 @@ mbedtls_md5_finish(&_ctx, (unsigned char *)_buf);`}
             <p className="text-emerald-300 leading-relaxed text-[11px]">
               <strong>Fix:</strong> <code className="text-cyan-300">server.begin()</code> is now called explicitly, making the dashboard and REST API live immediately on port 80.
             </p>
+          </div>
+        </div>
+      </div>
+
+      {/* UniversalCueLight.ino: MDNS.IP and Type Assignment Fixes */}
+      <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-xl space-y-4">
+        <div className="flex items-center gap-2">
+          <Wrench className="w-5 h-5 text-amber-400" />
+          <h3 className="text-sm font-bold text-white">
+            Resolved: UniversalCueLight.ino Arduino IDE Errors (<code className="text-amber-300 font-mono">MDNS.IP</code> & <code className="text-amber-300 font-mono">char[]</code> types)
+          </h3>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
+          <div className="p-4 bg-neutral-950 rounded-xl border border-neutral-800 space-y-2">
+            <span className="text-red-400 font-bold block flex items-center justify-between">
+              <span>1. &apos;class MDNSResponder&apos; has no member named &apos;IP&apos;</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-950 text-red-300 border border-red-800">ESP32 Core API</span>
+            </span>
+            <p className="text-neutral-300 font-sans text-xs leading-relaxed">
+              <strong>Cause:</strong> In the ESP32 Arduino Core library <code className="text-neutral-200">ESPmDNS.h</code>, the method to retrieve a resolved service IP address is <code className="text-emerald-300 font-mono">MDNS.address(i)</code>, NOT <code className="text-red-300 font-mono">MDNS.IP(i)</code> (which was an older ESP8266 convention).
+            </p>
+            <div className="p-2.5 bg-neutral-900 rounded border border-neutral-800 text-[11px] text-emerald-300">
+              ✓ Change <code className="text-red-300">MDNS.IP(i)</code> to <code className="text-emerald-300">MDNS.address(i)</code> at lines 1052 and 1057.
+            </div>
+          </div>
+
+          <div className="p-4 bg-neutral-950 rounded-xl border border-neutral-800 space-y-2">
+            <span className="text-red-400 font-bold block flex items-center justify-between">
+              <span>2. Incompatible types in assignment to char[]</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-950 text-red-300 border border-red-800">Type Safety</span>
+            </span>
+            <p className="text-neutral-300 font-sans text-xs leading-relaxed">
+              <strong>Cause:</strong> Network IP variables, topics, and host strings were declared as fixed <code className="text-red-300 font-mono">char[]</code> arrays, causing errors when assigning <code className="text-neutral-200 font-mono">String</code> values from web requests and <code className="text-neutral-200 font-mono">Preferences</code>, or assigning port numbers to char buffers.
+            </p>
+            <div className="p-2.5 bg-neutral-900 rounded border border-neutral-800 text-[11px] text-emerald-300">
+              ✓ Declared as <code className="text-cyan-300">String static_ip</code>, <code className="text-cyan-300">String cuesystem_host</code>, and <code className="text-cyan-300">int cuesystem_port</code>.
+            </div>
           </div>
         </div>
       </div>

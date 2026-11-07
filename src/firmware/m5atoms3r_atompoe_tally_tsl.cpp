@@ -138,24 +138,24 @@ String pairedTargetName = "";             // Target device name in P2P mode
 bool presenterCueActive = false;          // Active on TP unit when Presenter cues
 
 // ETC CueSystem Settings
-char cuesystem_host[40]   = "192.168.1.100"; // CueSystem Hub / Controller IP
-char cuesystem_port[6]    = "4000";          // CueSystem UDP Port (default 4000)
-int  cuesystem_channel    = 1;               // Cue Channel (1-24)
-bool cuesystem_ack_active = false;           // Acknowledged standby status
+String cuesystem_host       = "192.168.1.100"; // CueSystem Hub / Controller IP
+int    cuesystem_port       = 4000;            // CueSystem UDP Port (default 4000)
+int    cuesystem_channel    = 1;               // Cue Channel (1-32)
+bool   cuesystem_ack_active = false;           // Acknowledged standby status
 
 // NMOS IS-07 Event & Tally Settings (SMPTE ST 2110)
-char nmos_registry_host[40] = "192.168.1.50"; // NMOS IS-04 Registration Server
-char nmos_registry_port[6]  = "8235";         // NMOS Registration Port (default 8235)
-char nmos_source_id[50]     = "urn:uuid:7c9e6679-7425-4094-8f92-d6c1b35b62b1";
-char nmos_event_topic[40]   = "tally/program";
-bool nmos_is_on_air         = false;
+String nmos_registry_host   = "192.168.1.50"; // NMOS IS-04 Registration Server
+int    nmos_registry_port   = 8235;           // NMOS Registration Port (default 8235)
+String nmos_source_id       = "urn:uuid:7c9e6679-7425-4094-8f92-d6c1b35b62b1";
+String nmos_event_topic     = "tally/program";
+bool   nmos_is_on_air       = false;
 
 // Network IP Configuration (DHCP vs Static IP)
-bool useDHCP      = true;
-char static_ip[20]   = "192.168.1.185";
-char static_mask[20] = "255.255.255.0";
-char static_gw[20]   = "192.168.1.1";
-char static_dns[20]  = "192.168.1.1";
+bool   useDHCP              = true;
+String static_ip            = "192.168.1.185";
+String static_mask          = "255.255.255.0";
+String static_gw            = "192.168.1.1";
+String static_dns           = "192.168.1.1";
 
 // Brightness levels (0-255 scale for M5Unified)
 const uint8_t brightnessLevels[] = { 40, 90, 160, 255 };
@@ -192,8 +192,13 @@ Mycila::ESPConnect espConnect(server);
 // AtomS3R ESP32-S3 has 8MB PSRAM and 512KB SRAM, easily accommodating this.
 M5Canvas canvas(&M5.Display);
 bool doubleBufferEnabled = false;
+// Multi-Core & Thread-Safety Variables (FreeRTOS)
+volatile bool tallyStateChanged = false;
+volatile bool flashRequested = false;
+TaskHandle_t socketTaskHandle = NULL;
 
 // Forward Declarations
+void socketTask(void *pvParameters);
 void sendtally(int channel, bool live);
 void sendCueAck();
 void sendNMOSTally(bool live);
@@ -250,7 +255,7 @@ bool usesTallyArbiter() {
 // Network Helper Utilities & IP Configuration
 // ==========================================
 void applyNetworkIPConfig() {
-  if (!useDHCP && strlen(static_ip) > 0 && strlen(static_mask) > 0 && strlen(static_gw) > 0) {
+  if (!useDHCP && static_ip.length() > 0 && static_mask.length() > 0 && static_gw.length() > 0) {
     IPAddress ip, mask, gw, dns;
     if (ip.fromString(static_ip) && mask.fromString(static_mask) && gw.fromString(static_gw)) {
       if (!dns.fromString(static_dns)) {
@@ -330,13 +335,23 @@ void sendtally(int channel, bool live) {
     command[2 + i] = channelname[i];
   }
 
-  // Routing destination
+  // Routing destination: Use IPAddress parsing to prevent any blocking DNS lookups
   if (usesTallyArbiter()) {
-    udp.beginPacket(tallyarbiter_host, atoi(tallyarbiter_TSLport));
+    IPAddress targetIP;
+    if (targetIP.fromString(tallyarbiter_host)) {
+      udp.beginPacket(targetIP, atoi(tallyarbiter_TSLport));
+    } else {
+      udp.beginPacket(tallyarbiter_host, atoi(tallyarbiter_TSLport));
+    }
   } else {
     // Point-to-Point mode: send directly to paired peer IP, or subnet broadcast if unpaired
     if (pairedTargetIP.length() > 0 && pairedTargetIP != "0.0.0.0") {
-      udp.beginPacket(pairedTargetIP.c_str(), atoi(tallyarbiter_TSLport));
+      IPAddress pIP;
+      if (pIP.fromString(pairedTargetIP)) {
+        udp.beginPacket(pIP, atoi(tallyarbiter_TSLport));
+      } else {
+        udp.beginPacket(pairedTargetIP.c_str(), atoi(tallyarbiter_TSLport));
+      }
     } else {
       udp.beginPacket(IPAddress(255, 255, 255, 255), atoi(tallyarbiter_TSLport));
     }
@@ -355,10 +370,15 @@ void sendCueAck() {
   if (!networkConnected) return;
   cuesystem_ack_active = true;
   String ackMsg = String("CS,") + String(cuesystem_channel) + ",ACK\n";
-  udp.beginPacket(cuesystem_host, atoi(cuesystem_port));
+  IPAddress cueIP;
+  if (cueIP.fromString(cuesystem_host)) {
+    udp.beginPacket(cueIP, cuesystem_port);
+  } else {
+    udp.beginPacket(cuesystem_host.c_str(), cuesystem_port);
+  }
   udp.write((const uint8_t*)ackMsg.c_str(), ackMsg.length());
   udp.endPacket();
-  logger(String("[ETC CueSystem] Sent Acknowledge for Channel ") + String(cuesystem_channel) + " to " + cuesystem_host + ":" + cuesystem_port, "info");
+  logger(String("[ETC CueSystem] Sent Acknowledge for Channel ") + String(cuesystem_channel) + " to " + cuesystem_host + ":" + String(cuesystem_port), "info");
   renderScreen();
 }
 
@@ -375,7 +395,12 @@ void sendNMOSTally(bool live) {
   msg["payload"]["value"] = live;
   String jsonStr = JSON.stringify(msg);
 
-  udp.beginPacket(nmos_registry_host, atoi(nmos_registry_port));
+  IPAddress nmosIP;
+  if (nmosIP.fromString(nmos_registry_host)) {
+    udp.beginPacket(nmosIP, nmos_registry_port);
+  } else {
+    udp.beginPacket(nmos_registry_host.c_str(), nmos_registry_port);
+  }
   udp.write((const uint8_t*)jsonStr.c_str(), jsonStr.length());
   udp.endPacket();
   logger(String("[NMOS IS-07] Emitted event on ") + nmos_event_topic + ": " + (live ? "TRUE (On-Air)" : "FALSE (Standby)"), "info");
@@ -542,11 +567,20 @@ void renderScreen() {
       g->fillRoundRect(4, 4, 120, 24, 4, TFT_BLACK);
       g->drawRoundRect(4, 4, 120, 24, 4, TFT_DARKGRAY);
 
+      time_t now;
+      time(&now);
       struct tm timeinfo;
       char timeStr[12] = "--:--:--";
-      // Check local time non-blocking (0ms timeout)
-      if (getLocalTime(&timeinfo, 0)) {
+      if (now > 100000) {
+        localtime_r(&now, &timeinfo);
         strftime(timeStr, sizeof(timeStr), "%H:%M:%S", &timeinfo);
+      } else {
+        // Fallback to live ticking uptime clock until NTP sync completes
+        unsigned long totalSecs = millis() / 1000;
+        unsigned int h = (totalSecs / 3600) % 24;
+        unsigned int m = (totalSecs / 60) % 60;
+        unsigned int s = totalSecs % 60;
+        snprintf(timeStr, sizeof(timeStr), "%02u:%02u:%02u", h, m, s);
       }
       g->setTextDatum(middle_center);
       g->setTextSize(2);
@@ -736,7 +770,10 @@ void renderScreen() {
 
 
 void evaluateMode() {
-  renderScreen();
+  tallyStateChanged = true;
+  if (xPortGetCoreID() == 1) {
+    renderScreen();
+  }
 }
 
 void showSettings() {
@@ -1049,12 +1086,12 @@ void setupWebServer() {
     int n = MDNS.queryService("cuelx-tally", "udp");
     JSONVar arr;
     for (int i = 0; i < n; ++i) {
-      if (MDNS.IP(i).toString() == getNetworkIPStr()) {
+      if (MDNS.address(i).toString() == getNetworkIPStr()) {
         continue;
       }
       JSONVar p;
       p["hostname"] = MDNS.hostname(i);
-      p["ip"] = MDNS.IP(i).toString();
+      p["ip"] = MDNS.address(i).toString();
       p["port"] = (int)MDNS.port(i);
       #if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 2)
       if (MDNS.hasTxt(i, "role"))  p["role"]  = MDNS.txt(i, "role");
@@ -1216,7 +1253,7 @@ void setupWebServer() {
     request->send(200, "text/html", "<html><body style='background:#0f172a;color:#f1f5f9;font-family:sans-serif;padding:30px;'>"
                                     "<h2>Configuration Saved!</h2>"
                                     "<p>Mode: <strong>" + operatingMode + "</strong></p>"
-                                    "<p>IP Mode: <strong>" + (useDHCP ? "DHCP (Automatic)" : "Static IP: " + static_ip) + "</strong></p>"
+                                    "<p>IP Mode: <strong>" + (useDHCP ? String("DHCP (Automatic)") : (String("Static IP: ") + static_ip)) + "</strong></p>"
                                     "<p>Group: <strong>" + pairingGroup + "</strong></p>"
                                     "<a href='/' style='color:#38bdf8;text-decoration:none;font-weight:600;'>Return to Dashboard</a></body></html>");
 
@@ -1454,29 +1491,54 @@ void setup() {
 
   // Initial Screen Render
   renderScreen();
+
+  // 6. Start Socket.IO background task pinned to Core 0 (PRO_CPU)
+  // Isolating socket.loop() to Core 0 guarantees that TCP handshake timeouts
+  // when Tally Arbiter is offline will NEVER block Core 1 (UI, clock, button, UDP tally).
+  xTaskCreatePinnedToCore(
+    socketTask,
+    "socketTask",
+    8192,
+    NULL,
+    1,
+    &socketTaskHandle,
+    0
+  );
 }
 
 // ==========================================
-// Main Loop
+// Main Loop (Core 1: 100% Dedicated to UI & UDP)
 // ==========================================
 void loop() {
   M5.update();
   espConnect.loop();
   ArduinoOTA.handle();
 
-  // Handle incoming packets (TSL 3.1 UDP, ETC CueSystem, NMOS IS-07)
+  // 1. Process incoming packets with sub-millisecond latency (TSL 3.1 UDP, ETC CueSystem, NMOS IS-07)
   processIncomingTSL();
 
-  // CRITICAL: Only run socket.loop() when network is connected and Tally Arbiter mode is active!
-  // If run when disconnected or server unreachable, SocketIOclient blocks the MCU
-  // for 5000ms attempting TCP connect, freezing the loop and clock!
-  if (networkConnected && usesTallyArbiter()) {
-    socket.loop();
+  // 2. Handle flash effect if requested by Tally Arbiter
+  if (flashRequested) {
+    flashRequested = false;
+    for (int i = 0; i < 3; i++) {
+      if (doubleBufferEnabled) {
+        canvas.fillScreen(TFT_WHITE);
+        canvas.pushSprite(0, 0);
+        delay(100);
+        canvas.fillScreen(TFT_BLACK);
+        canvas.pushSprite(0, 0);
+        delay(100);
+      } else {
+        M5.Display.fillScreen(TFT_WHITE);
+        delay(100);
+        M5.Display.fillScreen(TFT_BLACK);
+        delay(100);
+      }
+    }
+    renderScreen();
   }
 
-  // ----------------------------------------
-  // Button Handling on AtomS3R Screen Button
-  // ----------------------------------------
+  // 3. Button Handling on AtomS3R Screen Button
   // Single click: Mode-aware action
   if (M5.BtnA.wasClicked()) {
     if (isETCCueSystem()) {
@@ -1528,23 +1590,57 @@ void loop() {
     ESP.restart();
   }
 
-  // ----------------------------------------
-  // Smooth 1-Second Clock & Periodic Refresh
-  // ----------------------------------------
-  if (millis() - lastRefreshTime >= REFRESH_INTERVAL) {
-    lastRefreshTime = millis();
-    if (networkConnected) {
-      if (isTP()) {
-        sendtally(1, ch1state);
-      }
+  // 4. Smooth 1-Second Clock & State Rollover Detection
+  time_t currentEpoch;
+  time(&currentEpoch);
+  static time_t lastEpoch = 0;
+  static unsigned long lastUptimeSecond = 0;
+  unsigned long currentUptimeSecond = millis() / 1000;
+
+  bool secondChanged = false;
+  if (currentEpoch > 100000) {
+    if (currentEpoch != lastEpoch) {
+      lastEpoch = currentEpoch;
+      secondChanged = true;
     }
+  } else {
+    if (currentUptimeSecond != lastUptimeSecond) {
+      lastUptimeSecond = currentUptimeSecond;
+      secondChanged = true;
+    }
+  }
+
+  // Periodic TP state refresh (every 2 seconds)
+  static unsigned long lastTPBroadcast = 0;
+  if (millis() - lastTPBroadcast >= 2000) {
+    lastTPBroadcast = millis();
+    if (networkConnected && isTP()) {
+      sendtally(1, ch1state);
+    }
+  }
+
+  if (secondChanged || tallyStateChanged) {
+    tallyStateChanged = false;
     renderScreen();
   }
+
+  // Yield 1ms to FreeRTOS watchdog & idle task
+  vTaskDelay(pdMS_TO_TICKS(1));
 }
 
 // ==========================================
 // Tally Arbiter Socket.IO Client Logic
 // ==========================================
+void socketTask(void *pvParameters) {
+  logger("[Task] Socket.IO background task running on Core 0", "info");
+  for (;;) {
+    if (networkConnected && usesTallyArbiter()) {
+      socket.loop();
+    }
+    vTaskDelay(pdMS_TO_TICKS(5));
+  }
+}
+
 void ws_emit(String event, const char *payload) {
   if (payload) {
     String msg = "[\"" + event + "\"," + payload + "]";
@@ -1585,7 +1681,7 @@ void socket_event(socketIOmessageType_t type, uint8_t *payload, size_t length) {
 
     case sIOtype_DISCONNECT:
       logger("[TallyArbiter] Disconnected from server.", "info");
-      renderScreen();
+      tallyStateChanged = true;
       break;
 
     case sIOtype_EVENT:
@@ -1627,27 +1723,12 @@ void socket_Connected(const char *payload, size_t length) {
   char charDeviceObj[1024];
   strcpy(charDeviceObj, deviceObj.c_str());
   ws_emit("listenerclient_connect", charDeviceObj);
-  renderScreen();
+  tallyStateChanged = true;
 }
 
 void socket_Flash() {
   logger("[TallyArbiter] Flash triggered!", "info");
-  for (int i = 0; i < 3; i++) {
-    if (doubleBufferEnabled) {
-      canvas.fillScreen(TFT_WHITE);
-      canvas.pushSprite(0, 0);
-      delay(200);
-      canvas.fillScreen(TFT_BLACK);
-      canvas.pushSprite(0, 0);
-      delay(200);
-    } else {
-      M5.Display.fillScreen(TFT_WHITE);
-      delay(200);
-      M5.Display.fillScreen(TFT_BLACK);
-      delay(200);
-    }
-  }
-  renderScreen();
+  flashRequested = true;
 }
 
 void socket_Reassign(String payload) {

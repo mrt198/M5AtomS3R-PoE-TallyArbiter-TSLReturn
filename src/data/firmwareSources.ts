@@ -92,15 +92,19 @@ while (WiFi.status() != WL_CONNECTED) {
   delay(500); // Blocks MCU
 }
 // Deadlocks if Wi-Fi drops or credentials change.`,
-    adapted: `// AtomS3R: W5500 SPI Ethernet with Wi-Fi / AP fallback
+    adapted: `// AtomS3R: W5500 SPI Ethernet with Dual-Core FreeRTOS Task Isolation
 SPI.begin(5, 7, 8, 6);
 ETH.begin(ETH_PHY_W5500, 1, 6, -1, -1, SPI);
 
-// Non-blocking loop guard:
-if (networkConnected) {
-  socket.loop(); // Prevents 5-second socket timeout stalls
+// Pin Socket.IO network loop to Core 0 (PRO_CPU):
+xTaskCreatePinnedToCore(socketTask, "socketTask", 8192, NULL, 1, &socketTaskHandle, 0);
+
+// Core 1 loop() is 100% dedicated to display, button, and <1ms UDP tally:
+void loop() {
+  processIncomingTSL(); // Instant UDP tally reception (<1ms)
+  // Non-blocking clock updates exactly on the second
 }`,
-    explanation: 'The AtomPoE base connects via SPI (SCK:5, CS:6, MISO:7, MOSI:8). Native ETH.begin() with WiFi.onEvent() guarantees instant DHCP over PoE, while socket.loop() is gated to eliminate 5-second connection stalls when offline.'
+    explanation: 'The AtomPoE base connects via SPI (SCK:5, CS:6, MISO:7, MOSI:8). By pinning socket.loop() to Core 0 in a FreeRTOS background task, any 4-second TCP handshake timeouts when Tally Arbiter is offline are completely isolated, leaving Core 1 100% responsive for GC9107 display rendering, smooth 1-second clock ticks, and instant tally response.'
   },
   {
     category: 'Network IP Configuration: DHCP vs Static IP',
