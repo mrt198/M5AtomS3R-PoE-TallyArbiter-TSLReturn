@@ -140,6 +140,58 @@ if (canvas.createSprite(128, 128) != nullptr) {
           </div>
         </div>
       </div>
+      {/* Protocols & Broadcast Integration Standards */}
+      <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-xl">
+        <div className="flex items-center gap-2 mb-4">
+          <ShieldCheck className="w-5 h-5 text-emerald-400" />
+          <h3 className="text-base font-bold text-white">
+            Supported Protocols & Broadcast Standards
+          </h3>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
+          <div className="p-4 bg-neutral-950 rounded-xl border border-neutral-800">
+            <div className="text-red-400 font-bold mb-1 flex items-center justify-between">
+              <span>ETC CueSystem Stage Protocol</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-950 text-red-300 border border-red-800">UDP 4000</span>
+            </div>
+            <p className="text-neutral-400 font-sans text-xs mt-1">
+              Standard theatrical cue light system for opera houses and playhouses. AtomS3R acts as an outstation listening on UDP port 4000 for <code className="text-amber-300">CS,&lt;ch&gt;,STANDBY</code> (Amber) and <code className="text-emerald-300">CS,&lt;ch&gt;,GO</code> (Green). Pressing the front LCD button sends <code className="text-sky-300">CS,&lt;ch&gt;,ACK\n</code> back to the hub.
+            </p>
+          </div>
+
+          <div className="p-4 bg-neutral-950 rounded-xl border border-neutral-800">
+            <div className="text-cyan-400 font-bold mb-1 flex items-center justify-between">
+              <span>AMWA NMOS IS-07 & IS-04</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">SMPTE ST 2110</span>
+            </div>
+            <p className="text-neutral-400 font-sans text-xs mt-1">
+              Open-standard IP tally and GPI events for SMPTE ST 2110 IP broadcast routing suites. Registers with the IS-04 node / registration server on port 8235 and emits boolean state events to the configured topic.
+            </p>
+          </div>
+
+          <div className="p-4 bg-neutral-950 rounded-xl border border-neutral-800">
+            <div className="text-purple-400 font-bold mb-1 flex items-center justify-between">
+              <span>TSL UMD v3.1 Protocol</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800">UDP 8910</span>
+            </div>
+            <p className="text-neutral-400 font-sans text-xs mt-1">
+              18-byte standard tally packet: byte 0 address, byte 1 control flags (<code className="text-purple-300">0x31</code> Preview return cue, <code className="text-purple-300">0x32</code> Program return tally), bytes 2–17 text display label.
+            </p>
+          </div>
+
+          <div className="p-4 bg-neutral-950 rounded-xl border border-neutral-800">
+            <div className="text-emerald-400 font-bold mb-1 flex items-center justify-between">
+              <span>Network IP Configuration</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">DHCP / Static IP</span>
+            </div>
+            <p className="text-neutral-400 font-sans text-xs mt-1">
+              Supports automatic DHCP assignment or fixed Static IP with configurable Subnet Mask, Default Gateway, and primary DNS Server for dedicated broadcast VLANs without router DHCP servers.
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
+

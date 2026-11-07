@@ -47,9 +47,24 @@ export default function App() {
     pairedTargetIP: '192.168.1.120',
     pairedTargetName: 'Presenter-Cam1',
     presenterCueActive: false,
+    useDHCP: true,
+    staticIP: '192.168.1.150',
+    staticMask: '255.255.255.0',
+    staticGW: '192.168.1.1',
+    staticDNS: '8.8.8.8',
+    cueHost: '192.168.1.50',
+    cuePort: 4000,
+    cueChannel: 1,
+    cueAckActive: false,
+    cueState: 'off',
+    nmosHost: '192.168.1.200',
+    nmosPort: 8235,
+    nmosSource: 'm5atoms3r-tally-source-01',
+    nmosTopic: 'device/tally/state',
+    nmosOnAir: false,
   });
 
-  // Track simulated TSL UDP transmission
+  // Track simulated UDP transmission
   const [lastTslPacket, setLastTslPacket] = useState<{
     hex: string;
     decoded: string;
@@ -65,6 +80,35 @@ export default function App() {
   });
 
   const handleSendTslPacket = (channel: number, live: boolean) => {
+    const now = new Date();
+    const timeStr = now.toTimeString().split(' ')[0];
+
+    if (simState.operatingMode === 'ETC_CueSystem') {
+      const payload = `CS,${simState.cueChannel},ACK\\n`;
+      const hex = Array.from(payload).map(c => c.charCodeAt(0).toString(16).padStart(2, '0').toUpperCase()).join(' ');
+      setLastTslPacket({
+        hex,
+        decoded: `ETC CueSystem Outstation ACK: "CS,${simState.cueChannel},ACK" -> ${simState.cueHost}:${simState.cuePort}`,
+        timestamp: timeStr,
+        channel: simState.cueChannel,
+        live
+      });
+      return;
+    }
+
+    if (simState.operatingMode === 'NMOS_IS07') {
+      const payload = `{"topic":"${simState.nmosTopic}","payload":{"value":${live}}}`;
+      const hex = Array.from(payload).slice(0, 18).map(c => c.charCodeAt(0).toString(16).padStart(2, '0').toUpperCase()).join(' ');
+      setLastTslPacket({
+        hex,
+        decoded: `NMOS IS-07 Event: ${payload} -> ${simState.nmosHost}:${simState.nmosPort}`,
+        timestamp: timeStr,
+        channel: 1,
+        live
+      });
+      return;
+    }
+
     const channelNames: Record<number, string> = {
       1: 'R3 Pres         ',
       2: 'Mic 2 Live      ',
@@ -103,8 +147,6 @@ export default function App() {
       .join(' ');
 
     const fullHex = `${addrHex} ${ctrlHex} ${nameHex}`;
-    const now = new Date();
-    const timeStr = now.toTimeString().split(' ')[0];
 
     setLastTslPacket({
       hex: fullHex,

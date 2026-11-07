@@ -3,13 +3,18 @@ import {
   Network, 
   Zap, 
   Radio, 
-  RotateCcw, 
   Wifi, 
   Sun, 
   Layers, 
   ArrowRightLeft,
   CheckCircle2,
-  Info
+  Info,
+  Server,
+  Sliders,
+  Check,
+  Disc3,
+  Theater,
+  Tv
 } from 'lucide-react';
 
 export interface SimulatorState {
@@ -26,11 +31,29 @@ export interface SimulatorState {
   taPort: string;
   tslPort: string;
   flashActive: boolean;
-  operatingMode: 'TP' | 'Presenter' | 'TP_P2P' | 'Presenter_P2P';
+  operatingMode: 'TP' | 'Presenter' | 'TP_P2P' | 'Presenter_P2P' | 'ETC_CueSystem' | 'NMOS_IS07';
   pairingGroup: string;
   pairedTargetIP: string;
   pairedTargetName: string;
   presenterCueActive: boolean;
+  // Network IP Configuration (DHCP vs Static IP)
+  useDHCP: boolean;
+  staticIP: string;
+  staticMask: string;
+  staticGW: string;
+  staticDNS: string;
+  // ETC CueSystem configuration & state
+  cueHost: string;
+  cuePort: number;
+  cueChannel: number;
+  cueAckActive: boolean;
+  cueState: 'standby' | 'go' | 'off';
+  // AMWA NMOS IS-07 Event & Tally configuration & state
+  nmosHost: string;
+  nmosPort: number;
+  nmosSource: string;
+  nmosTopic: string;
+  nmosOnAir: boolean;
 }
 
 interface AtomSimulatorProps {
@@ -74,11 +97,25 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
 
   const brightnessPercents = [15, 35, 65, 100];
 
-  // Screen background color based on tally mode
+  // Screen background color based on tally mode and operating mode
   const getScreenBgColor = () => {
     if (state.flashActive) return 'bg-white text-black';
     if (state.currentScreen === 1) return 'bg-black text-white';
 
+    // ETC CueSystem mode styling
+    if (state.operatingMode === 'ETC_CueSystem') {
+      if (state.cueState === 'standby') return 'bg-amber-500 text-black';
+      if (state.cueState === 'go') return 'bg-emerald-500 text-black';
+      return 'bg-neutral-950 text-white';
+    }
+
+    // NMOS IS-07 mode styling
+    if (state.operatingMode === 'NMOS_IS07') {
+      if (state.nmosOnAir) return 'bg-red-600 text-white';
+      return 'bg-neutral-950 text-white';
+    }
+
+    // Tally Arbiter / TSL modes
     switch (state.tallyState) {
       case 'program':
         return 'bg-red-600 text-white';
@@ -93,6 +130,14 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
   };
 
   const getStatusLabel = () => {
+    if (state.operatingMode === 'ETC_CueSystem') {
+      if (state.cueState === 'standby') return 'STANDBY';
+      if (state.cueState === 'go') return 'GO!';
+      return 'STANDBY';
+    }
+    if (state.operatingMode === 'NMOS_IS07') {
+      return state.nmosOnAir ? 'ON AIR' : 'OFF AIR';
+    }
     switch (state.tallyState) {
       case 'program': return 'PROGRAM';
       case 'preview': return 'PREVIEW';
@@ -135,8 +180,16 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
     } else {
       setClickCount(1);
       const timer = setTimeout(() => {
-        // Single click: Toggle Cue
+        // Single click: Mode-aware action
         setState(prev => {
+          if (prev.operatingMode === 'ETC_CueSystem') {
+            const nextAck = !prev.cueAckActive;
+            return { ...prev, cueAckActive: nextAck };
+          }
+          if (prev.operatingMode === 'NMOS_IS07') {
+            const nextLive = !prev.nmosOnAir;
+            return { ...prev, nmosOnAir: nextLive };
+          }
           const nextCue = !prev.isCueActive;
           onSendTslPacket(1, nextCue);
           return { ...prev, isCueActive: nextCue };
@@ -161,6 +214,10 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
     }, 180);
   };
 
+  const displayedIP = state.useDHCP 
+    ? (state.networkMode === 'ETH' ? '192.168.1.185' : '192.168.1.92') 
+    : state.staticIP;
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
       {/* Visual Hardware Unit */}
@@ -169,6 +226,8 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
           {/* Subtle glow behind device based on tally */}
           <div 
             className={`absolute -top-12 -left-12 w-48 h-48 rounded-full blur-3xl opacity-30 pointer-events-none transition-colors duration-500 ${
+              state.operatingMode === 'ETC_CueSystem' ? (state.cueState === 'go' ? 'bg-emerald-500' : state.cueState === 'standby' ? 'bg-amber-500' : 'bg-blue-500') :
+              state.operatingMode === 'NMOS_IS07' ? (state.nmosOnAir ? 'bg-red-500' : 'bg-cyan-500') :
               state.tallyState === 'program' ? 'bg-red-500' :
               state.tallyState === 'preview' ? 'bg-emerald-500' :
               state.tallyState === 'aux' ? 'bg-amber-500' : 'bg-blue-500'
@@ -212,7 +271,7 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                   style={{
                     opacity: (brightnessPercents[state.brightnessLevel] / 100) * 0.4 + 0.6
                   }}
-                  title="Click screen: Single=Cue, Double=Screen, Hold=Brightness"
+                  title="Click screen: Single=Action/Ack, Double=Screen, Hold=Brightness"
                 >
                   {state.currentScreen === 0 ? (
                     // Screen 0: Tally & Cue
@@ -224,14 +283,21 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                         </div>
                       </div>
 
-                      {/* Main Device Name (Cam 1 Pres) directly below clock */}
+                      {/* Main Device Name / Channel directly below clock */}
                       <div className="text-center py-0.5 my-auto">
                         <div className="text-sm font-black tracking-wider uppercase leading-tight truncate px-1 drop-shadow-sm">
-                          {state.deviceName || 'UNASSIGNED'}
+                          {state.operatingMode === 'ETC_CueSystem' 
+                            ? `CUE CH ${state.cueChannel}` 
+                            : (state.deviceName || 'UNASSIGNED')}
                         </div>
                         <div className="inline-block mt-0.5 px-2.5 py-0.5 rounded text-[9.5px] font-bold uppercase tracking-wider border border-current/40 bg-current/15 shadow-sm">
                           {getStatusLabel()}
                         </div>
+                        {state.operatingMode === 'ETC_CueSystem' && state.cueAckActive && (
+                          <div className="mt-0.5 text-[8px] font-bold uppercase tracking-wider bg-black text-emerald-400 border border-emerald-500 rounded px-1 py-0.2 animate-pulse">
+                            [ACKNOWLEDGED]
+                          </div>
+                        )}
                       </div>
 
                       {/* Bottom Status: Mode Badge, Cue & Peer / TA */}
@@ -242,28 +308,46 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                             {state.operatingMode === 'Presenter' && '[PRES (TA)]'}
                             {state.operatingMode === 'TP_P2P' && '[P2P TP]'}
                             {state.operatingMode === 'Presenter_P2P' && '[P2P PRES]'}
+                            {state.operatingMode === 'ETC_CueSystem' && '[ETC CUE]'}
+                            {state.operatingMode === 'NMOS_IS07' && '[NMOS-07]'}
                           </span>
                           <span className="opacity-90 font-normal">
-                            {state.operatingMode.includes('P2P')
-                              ? `Grp: ${state.pairingGroup.slice(0, 8)}`
+                            {state.operatingMode === 'ETC_CueSystem'
+                              ? `CH ${state.cueChannel}`
+                              : state.operatingMode === 'NMOS_IS07'
+                              ? `Port ${state.nmosPort}`
+                              : state.operatingMode.includes('P2P')
+                              ? `Grp: ${state.pairingGroup.slice(0, 6)}`
                               : (state.networkMode === 'ETH' ? 'TA: ONLINE' : 'TA: OFFLINE')}
                           </span>
                         </div>
 
                         <div className="flex justify-between items-center">
                           <span className="opacity-80">
-                            {state.operatingMode === 'Presenter' || state.operatingMode === 'Presenter_P2P'
+                            {state.operatingMode === 'ETC_CueSystem'
+                              ? 'Stage Ack:'
+                              : state.operatingMode === 'NMOS_IS07'
+                              ? 'IS-07 State:'
+                              : (state.operatingMode === 'Presenter' || state.operatingMode === 'Presenter_P2P')
                               ? 'Cue(PVW):'
                               : 'Return(PRG):'}
                           </span>
                           <span className={`font-bold px-1 rounded text-[8px] ${
-                            state.isCueActive 
-                              ? (state.operatingMode === 'Presenter' || state.operatingMode === 'Presenter_P2P'
-                                  ? 'bg-emerald-950 text-emerald-300 border border-emerald-500' 
-                                  : 'bg-red-950 text-red-200 border border-red-500')
-                              : 'opacity-70'
+                            state.operatingMode === 'ETC_CueSystem'
+                              ? (state.cueAckActive ? 'bg-emerald-950 text-emerald-300 border border-emerald-500' : 'opacity-70')
+                              : state.operatingMode === 'NMOS_IS07'
+                              ? (state.nmosOnAir ? 'bg-red-950 text-red-200 border border-red-500' : 'opacity-70')
+                              : (state.isCueActive 
+                                  ? (state.operatingMode === 'Presenter' || state.operatingMode === 'Presenter_P2P'
+                                      ? 'bg-emerald-950 text-emerald-300 border border-emerald-500' 
+                                      : 'bg-red-950 text-red-200 border border-red-500')
+                                  : 'opacity-70')
                           }`}>
-                            {state.isCueActive ? '● ACTIVE' : 'OFF'}
+                            {state.operatingMode === 'ETC_CueSystem'
+                              ? (state.cueAckActive ? '● ACKED' : 'READY')
+                              : state.operatingMode === 'NMOS_IS07'
+                              ? (state.nmosOnAir ? '● ON AIR' : 'OFF')
+                              : (state.isCueActive ? '● ACTIVE' : 'OFF')}
                           </span>
                         </div>
 
@@ -274,7 +358,7 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                           </div>
                         ) : (
                           <div className="opacity-80 text-[8px] truncate">
-                            IP: {state.networkMode === 'ETH' ? '192.168.1.185' : '192.168.1.92'}
+                            IP: {displayedIP} ({state.useDHCP ? 'D' : 'S'})
                           </div>
                         )}
                       </div>
@@ -288,15 +372,40 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                         </div>
                         <div className="mt-1 space-y-0.5 text-neutral-300 text-[8px]">
                           <div>Mode: <span className="text-amber-400 font-bold">{state.operatingMode}</span></div>
-                          <div>Grp:  <span className="text-white">{state.pairingGroup}</span></div>
-                          <div>Peer: <span className="text-cyan-300 truncate">{state.pairedTargetIP || 'Unpaired (B-cast)'}</span></div>
-                          <div>IP:   <span className="text-white">{state.networkMode === 'ETH' ? '192.168.1.185' : '192.168.1.92'}</span></div>
-                          <div>TSL:  <span className="text-emerald-400">{state.tslPort} ({state.operatingMode.includes('Presenter') ? 'PVW' : 'PRG'})</span></div>
-                          <div>TA:   <span className={state.operatingMode.includes('P2P') ? 'text-neutral-500' : 'text-emerald-400'}>
-                            {state.operatingMode.includes('P2P') ? 'Disabled (P2P)' : 'Connected'}
-                          </span></div>
+                          <div>IP Mode: <span className="text-cyan-300 font-bold">{state.useDHCP ? 'DHCP (Auto)' : 'Static (Manual)'}</span></div>
+                          <div>IP: <span className="text-white">{displayedIP}</span></div>
+                          {!state.useDHCP && (
+                            <>
+                              <div>Mask: <span className="text-neutral-400">{state.staticMask}</span></div>
+                              <div>GW:   <span className="text-neutral-400">{state.staticGW}</span></div>
+                            </>
+                          )}
+                          {state.operatingMode === 'ETC_CueSystem' ? (
+                            <>
+                              <div>Cue Hub: <span className="text-amber-300">{state.cueHost}:{state.cuePort}</span></div>
+                              <div>Channel: <span className="text-emerald-400 font-bold">{state.cueChannel}</span></div>
+                              <div>Ack:     <span className={state.cueAckActive ? 'text-emerald-400 font-bold' : 'text-neutral-500'}>
+                                {state.cueAckActive ? 'ACKNOWLEDGED' : 'IDLE'}
+                              </span></div>
+                            </>
+                          ) : state.operatingMode === 'NMOS_IS07' ? (
+                            <>
+                              <div>Registry: <span className="text-cyan-300">{state.nmosHost}:{state.nmosPort}</span></div>
+                              <div>Topic:    <span className="text-white truncate">{state.nmosTopic}</span></div>
+                              <div>Tally:    <span className={state.nmosOnAir ? 'text-red-400 font-bold' : 'text-neutral-500'}>
+                                {state.nmosOnAir ? 'LIVE ON AIR' : 'OFF'}
+                              </span></div>
+                            </>
+                          ) : (
+                            <>
+                              <div>Grp:  <span className="text-white">{state.pairingGroup}</span></div>
+                              <div>TSL:  <span className="text-emerald-400">{state.tslPort} ({state.operatingMode.includes('Presenter') ? 'PVW' : 'PRG'})</span></div>
+                              <div>TA:   <span className={state.operatingMode.includes('P2P') ? 'text-neutral-500' : 'text-emerald-400'}>
+                                {state.operatingMode.includes('P2P') ? 'Disabled (P2P)' : 'Connected'}
+                              </span></div>
+                            </>
+                          )}
                           <div>D-Buffer: <span className="text-emerald-400">32KB (OK)</span></div>
-                          <div>Free PSRAM: <span className="text-white">8,112 KB</span></div>
                         </div>
                       </div>
                       <div className="border-t border-neutral-800 pt-0.5 text-neutral-400 flex justify-between text-[8px]">
@@ -350,7 +459,10 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
             </div>
             <div className="flex justify-between">
               <span>• Single Click:</span>
-              <span className="text-white">Toggle Cue Ch1</span>
+              <span className="text-white">
+                {state.operatingMode === 'ETC_CueSystem' ? 'Send Performer ACK' :
+                 state.operatingMode === 'NMOS_IS07' ? 'Toggle IS-07 Tally' : 'Toggle Cue Ch1'}
+              </span>
             </div>
             <div className="flex justify-between">
               <span>• Double Click:</span>
@@ -366,23 +478,23 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
 
       {/* Simulator Control Board */}
       <div className="lg:col-span-7 space-y-6">
-        {/* Operating Mode & P2P Discovery Controls */}
+        {/* Operating Mode Selector */}
         <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-xl">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold text-neutral-200 uppercase tracking-wider flex items-center gap-2">
               <ArrowRightLeft className="w-4 h-4 text-cyan-400" />
-              <span>Operating Mode & Return Cue Routing</span>
+              <span>Operating Mode Selection</span>
             </h3>
             <span className="text-xs px-2.5 py-0.5 rounded-full font-mono font-bold bg-neutral-800 text-neutral-300 border border-neutral-700">
               {state.operatingMode}
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
             <button
               type="button"
               onClick={() => setState(prev => ({ ...prev, operatingMode: 'TP', presenterCueActive: false }))}
-              className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+              className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
                 state.operatingMode === 'TP'
                   ? 'bg-blue-950/60 text-white border-blue-500 shadow-lg shadow-blue-950/50'
                   : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-neutral-700'
@@ -390,101 +502,378 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
             >
               <div className="flex items-center justify-between">
                 <span className="font-bold text-xs font-mono text-blue-400">TP (Tally Arbiter)</span>
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-900/50 text-blue-300">Red 0x32</span>
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-900/50 text-blue-300">0x32 Red</span>
               </div>
               <p className="text-[11px] text-neutral-400 mt-1">
-                Technical Producer mode with TA server. Single click sends <strong>TSL Program (0x32)</strong>.
+                Technical Producer mode with TA server. Sends TSL Program.
               </p>
             </button>
 
             <button
               type="button"
               onClick={() => setState(prev => ({ ...prev, operatingMode: 'Presenter', presenterCueActive: false }))}
-              className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+              className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
                 state.operatingMode === 'Presenter'
                   ? 'bg-emerald-950/60 text-white border-emerald-500 shadow-lg shadow-emerald-950/50'
                   : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-neutral-700'
               }`}
             >
               <div className="flex items-center justify-between">
-                <span className="font-bold text-xs font-mono text-emerald-400">Presenter (Tally Arbiter)</span>
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-900/50 text-emerald-300">Green 0x31</span>
+                <span className="font-bold text-xs font-mono text-emerald-400">Presenter (TA)</span>
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-900/50 text-emerald-300">0x31 Green</span>
               </div>
               <p className="text-[11px] text-neutral-400 mt-1">
-                Presenter mode with TA server. Single click sends <strong>TSL Preview (0x31)</strong> return cue.
+                Presenter mode with TA server. Sends TSL Preview return cue.
               </p>
             </button>
 
             <button
               type="button"
               onClick={() => setState(prev => ({ ...prev, operatingMode: 'TP_P2P' }))}
-              className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+              className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
                 state.operatingMode === 'TP_P2P'
                   ? 'bg-purple-950/60 text-white border-purple-500 shadow-lg shadow-purple-950/50'
                   : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-neutral-700'
               }`}
             >
               <div className="flex items-center justify-between">
-                <span className="font-bold text-xs font-mono text-purple-400">TP no Tally Arbiter (P2P)</span>
+                <span className="font-bold text-xs font-mono text-purple-400">TP Standalone (P2P)</span>
                 <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-purple-900/50 text-purple-300">P2P Master</span>
               </div>
               <p className="text-[11px] text-neutral-400 mt-1">
-                Direct peer link. Controls presenter tally and receives Presenter cue notifications.
+                Zero-server master. Pairs directly with Presenter via mDNS.
               </p>
             </button>
 
             <button
               type="button"
               onClick={() => setState(prev => ({ ...prev, operatingMode: 'Presenter_P2P' }))}
-              className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+              className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
                 state.operatingMode === 'Presenter_P2P'
                   ? 'bg-amber-950/60 text-white border-amber-500 shadow-lg shadow-amber-950/50'
                   : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-neutral-700'
               }`}
             >
               <div className="flex items-center justify-between">
-                <span className="font-bold text-xs font-mono text-amber-400">Presenter no TA (P2P)</span>
+                <span className="font-bold text-xs font-mono text-amber-400">Presenter no TA</span>
                 <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-900/50 text-amber-300">P2P Slave</span>
               </div>
               <p className="text-[11px] text-neutral-400 mt-1">
-                Zero-server standalone unit. Automatically discovers paired TP via mDNS DNS-SD.
+                Zero-server slave. Directly receives tally and cues TP.
+              </p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setState(prev => ({ ...prev, operatingMode: 'ETC_CueSystem' }))}
+              className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                state.operatingMode === 'ETC_CueSystem'
+                  ? 'bg-red-950/60 text-white border-red-500 shadow-lg shadow-red-950/50'
+                  : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-neutral-700'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-xs font-mono text-red-400">ETC CueSystem</span>
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-red-900/50 text-red-300">Stage Cue</span>
+              </div>
+              <p className="text-[11px] text-neutral-400 mt-1">
+                Theatre & opera stage cue outstation. Standby, Go, & Performer ACK.
+              </p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setState(prev => ({ ...prev, operatingMode: 'NMOS_IS07' }))}
+              className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                state.operatingMode === 'NMOS_IS07'
+                  ? 'bg-cyan-950/60 text-white border-cyan-500 shadow-lg shadow-cyan-950/50'
+                  : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-neutral-700'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-xs font-mono text-cyan-400">NMOS IS-07</span>
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-900/50 text-cyan-300">ST 2110</span>
+              </div>
+              <p className="text-[11px] text-neutral-400 mt-1">
+                AMWA NMOS open IP broadcast tally with IS-04 registry.
               </p>
             </button>
           </div>
 
-          {/* Group and P2P Peer Parameters */}
-          <div className="p-3.5 bg-neutral-950 rounded-xl border border-neutral-800 mb-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-mono">
-            <div>
-              <span className="text-neutral-500 block text-[10px]">PAIRING GROUP (ISOLATION):</span>
-              <input 
-                type="text" 
-                value={state.pairingGroup}
-                onChange={(e) => setState(prev => ({ ...prev, pairingGroup: e.target.value }))}
-                className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-white font-bold mt-1 text-xs"
-              />
+          {/* Mode-Specific Interaction Testing */}
+          {state.operatingMode === 'ETC_CueSystem' ? (
+            <div className="p-4 bg-neutral-950 rounded-xl border border-red-900/40 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-red-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <Theater className="w-4 h-4" />
+                  <span>ETC CueSystem Stage Control Hub (Port {state.cuePort})</span>
+                </span>
+                <span className="text-[11px] font-mono text-neutral-400">Channel: {state.cueChannel}</span>
+              </div>
+              <p className="text-xs text-neutral-400">
+                Simulate cue light triggers sent from the stage manager console over UDP:
+              </p>
+              <div className="flex flex-wrap gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, cueState: 'standby', cueAckActive: false }))}
+                  className={`px-3 py-2 rounded-lg text-xs font-mono font-semibold border transition-all cursor-pointer ${
+                    state.cueState === 'standby'
+                      ? 'bg-amber-600 text-black border-amber-400 font-bold'
+                      : 'bg-neutral-800 text-amber-300 border-neutral-700 hover:border-amber-500'
+                  }`}
+                >
+                  Simulate STANDBY (Amber CS,{state.cueChannel},STANDBY)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, cueState: 'go' }))}
+                  className={`px-3 py-2 rounded-lg text-xs font-mono font-semibold border transition-all cursor-pointer ${
+                    state.cueState === 'go'
+                      ? 'bg-emerald-600 text-black border-emerald-400 font-bold'
+                      : 'bg-neutral-800 text-emerald-300 border-neutral-700 hover:border-emerald-500'
+                  }`}
+                >
+                  Simulate GO! (Green CS,{state.cueChannel},GO)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, cueState: 'off', cueAckActive: false }))}
+                  className="px-3 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-lg text-xs font-mono border border-neutral-700 cursor-pointer"
+                >
+                  Clear / OFF
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, cueAckActive: !prev.cueAckActive }))}
+                  className={`px-3 py-2 rounded-lg text-xs font-mono font-semibold border transition-all cursor-pointer ${
+                    state.cueAckActive
+                      ? 'bg-emerald-950 text-emerald-300 border-emerald-500'
+                      : 'bg-neutral-800 text-neutral-300 border-neutral-700'
+                  }`}
+                >
+                  Performer ACK Return: {state.cueAckActive ? '● ACKED (CS,1,ACK)' : 'Send ACK'}
+                </button>
+              </div>
             </div>
-            <div>
-              <span className="text-neutral-500 block text-[10px]">PAIRED PEER TARGET:</span>
-              <span className="text-cyan-400 font-bold block mt-2 truncate">
-                {state.pairedTargetName} ({state.pairedTargetIP})
-              </span>
+          ) : state.operatingMode === 'NMOS_IS07' ? (
+            <div className="p-4 bg-neutral-950 rounded-xl border border-cyan-900/40 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <Tv className="w-4 h-4" />
+                  <span>NMOS IS-07 Event & Tally (SMPTE ST 2110)</span>
+                </span>
+                <span className="text-[11px] font-mono text-neutral-400">Registry: {state.nmosHost}:{state.nmosPort}</span>
+              </div>
+              <p className="text-xs text-neutral-400">
+                Simulate state events emitted to the IS-04 registry topic <code className="text-cyan-300">{state.nmosTopic}</code>:
+              </p>
+              <div className="flex flex-wrap gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, nmosOnAir: !prev.nmosOnAir }))}
+                  className={`px-4 py-2 rounded-lg text-xs font-mono font-semibold flex items-center gap-2 border transition-all cursor-pointer ${
+                    state.nmosOnAir
+                      ? 'bg-red-600 text-white border-red-400 font-bold shadow-lg shadow-red-900/50'
+                      : 'bg-neutral-800 text-neutral-300 border-neutral-700 hover:border-cyan-500'
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${state.nmosOnAir ? 'bg-white animate-pulse' : 'bg-red-400'}`} />
+                  <span>{state.nmosOnAir ? 'IS-07 Live: ON AIR (value: true)' : 'Toggle Live (value: true)'}</span>
+                </button>
+              </div>
             </div>
+          ) : (
+            <div className="p-3.5 bg-neutral-950 rounded-xl border border-neutral-800 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-mono">
+              <div>
+                <span className="text-neutral-500 block text-[10px]">PAIRING GROUP (ISOLATION):</span>
+                <input 
+                  type="text" 
+                  value={state.pairingGroup}
+                  onChange={(e) => setState(prev => ({ ...prev, pairingGroup: e.target.value }))}
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-white font-bold mt-1 text-xs"
+                />
+              </div>
+              <div>
+                <span className="text-neutral-500 block text-[10px]">PAIRED PEER TARGET:</span>
+                <span className="text-cyan-400 font-bold block mt-2 truncate">
+                  {state.pairedTargetName} ({state.pairedTargetIP})
+                </span>
+              </div>
+              <div>
+                <span className="text-neutral-500 block text-[10px]">TSL 3.1 CUE BYTE:</span>
+                <span className="text-emerald-400 font-bold block mt-2">
+                  {state.operatingMode.includes('Presenter') ? '0x31 (Preview Return)' : '0x32 (Program Return)'}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Network IP Configuration Card (DHCP vs Static IP) */}
+        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-semibold text-neutral-200 uppercase tracking-wider flex items-center gap-2">
+              <Network className="w-4 h-4 text-emerald-400" />
+              <span>Network IP Configuration (W5500 SPI Ethernet / Wi-Fi)</span>
+            </h3>
+            <span className={`text-xs px-2.5 py-0.5 rounded-full font-mono font-bold border ${
+              state.useDHCP 
+                ? 'bg-blue-950 text-blue-300 border-blue-800' 
+                : 'bg-amber-950 text-amber-300 border-amber-800'
+            }`}>
+              {state.useDHCP ? 'DHCP (Auto)' : 'Static IP (Manual)'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <div>
-              <span className="text-neutral-500 block text-[10px]">TSL 3.1 CUE BYTE:</span>
-              <span className="text-emerald-400 font-bold block mt-2">
-                {state.operatingMode.includes('Presenter') ? '0x31 (Preview Return)' : '0x32 (Program Return)'}
-              </span>
+              <label className="block text-xs font-semibold text-neutral-400 mb-1">
+                IP Assignment Mode
+              </label>
+              <select
+                value={state.useDHCP ? '1' : '0'}
+                onChange={(e) => setState(prev => ({ ...prev, useDHCP: e.target.value === '1' }))}
+                className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-emerald-500 cursor-pointer"
+              >
+                <option value="1">DHCP (Automatic Router Assignment)</option>
+                <option value="0">Static IP (Manual Fixed Studio Address)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-neutral-400 mb-1">
+                Active IP Address
+              </label>
+              <div className="px-3 py-2 bg-neutral-950 border border-neutral-700 rounded-lg text-xs font-mono font-bold text-emerald-400">
+                {displayedIP}
+              </div>
             </div>
           </div>
 
-          {/* Mode-Specific Interaction Testing */}
-          <div className="flex flex-wrap gap-2.5 pt-3 border-t border-neutral-800">
-            {(state.operatingMode === 'TP' || state.operatingMode === 'TP_P2P') ? (
-              <>
+          {!state.useDHCP && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-neutral-800 text-xs font-mono">
+              <div>
+                <label className="block text-[10px] text-neutral-500 mb-1">STATIC IP:</label>
+                <input
+                  type="text"
+                  value={state.staticIP}
+                  onChange={(e) => setState(prev => ({ ...prev, staticIP: e.target.value }))}
+                  className="w-full bg-neutral-950 border border-neutral-700 rounded px-2 py-1 text-white text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] text-neutral-500 mb-1">SUBNET MASK:</label>
+                <input
+                  type="text"
+                  value={state.staticMask}
+                  onChange={(e) => setState(prev => ({ ...prev, staticMask: e.target.value }))}
+                  className="w-full bg-neutral-950 border border-neutral-700 rounded px-2 py-1 text-white text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] text-neutral-500 mb-1">DEFAULT GATEWAY:</label>
+                <input
+                  type="text"
+                  value={state.staticGW}
+                  onChange={(e) => setState(prev => ({ ...prev, staticGW: e.target.value }))}
+                  className="w-full bg-neutral-950 border border-neutral-700 rounded px-2 py-1 text-white text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] text-neutral-500 mb-1">DNS SERVER:</label>
+                <input
+                  type="text"
+                  value={state.staticDNS}
+                  onChange={(e) => setState(prev => ({ ...prev, staticDNS: e.target.value }))}
+                  className="w-full bg-neutral-950 border border-neutral-700 rounded px-2 py-1 text-white text-xs"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Standard Tally State Injection (When using broadcast modes) */}
+        {(state.operatingMode === 'TP' || state.operatingMode === 'Presenter' || state.operatingMode.includes('P2P')) && (
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6">
+            <h3 className="text-sm font-semibold text-neutral-200 uppercase tracking-wider mb-4 flex items-center gap-2">
+              <Radio className="w-4 h-4 text-red-400" />
+              <span>Tally State Injection</span>
+            </h3>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <button
+                type="button"
+                onClick={() => setState(prev => ({ ...prev, tallyState: 'program' }))}
+                className={`p-3 rounded-xl border font-mono font-bold text-xs flex flex-col items-center gap-1 transition-all ${
+                  state.tallyState === 'program'
+                    ? 'bg-red-600 text-white border-red-500 shadow-lg shadow-red-900/50'
+                    : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-red-900 hover:text-white'
+                }`}
+              >
+                <span className="w-3 h-3 rounded-full bg-red-400" />
+                <span>PROGRAM</span>
+                <span className="text-[10px] opacity-75 font-normal">Live On Air</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setState(prev => ({ ...prev, tallyState: 'preview' }))}
+                className={`p-3 rounded-xl border font-mono font-bold text-xs flex flex-col items-center gap-1 transition-all ${
+                  state.tallyState === 'preview'
+                    ? 'bg-emerald-600 text-white border-emerald-500 shadow-lg shadow-emerald-900/50'
+                    : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-emerald-900 hover:text-white'
+                }`}
+              >
+                <span className="w-3 h-3 rounded-full bg-emerald-400" />
+                <span>PREVIEW</span>
+                <span className="text-[10px] opacity-75 font-normal">Next Up</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setState(prev => ({ ...prev, tallyState: 'aux' }))}
+                className={`p-3 rounded-xl border font-mono font-bold text-xs flex flex-col items-center gap-1 transition-all ${
+                  state.tallyState === 'aux'
+                    ? 'bg-amber-600 text-white border-amber-500 shadow-lg shadow-amber-900/50'
+                    : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-amber-900 hover:text-white'
+                }`}
+              >
+                <span className="w-3 h-3 rounded-full bg-amber-400" />
+                <span>AUX BUS</span>
+                <span className="text-[10px] opacity-75 font-normal">Routing Aux</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setState(prev => ({ ...prev, tallyState: 'standby' }))}
+                className={`p-3 rounded-xl border font-mono font-bold text-xs flex flex-col items-center gap-1 transition-all ${
+                  state.tallyState === 'standby'
+                    ? 'bg-neutral-800 text-white border-neutral-600'
+                    : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-neutral-700 hover:text-white'
+                }`}
+              >
+                <span className="w-3 h-3 rounded-full bg-neutral-600" />
+                <span>STANDBY</span>
+                <span className="text-[10px] opacity-75 font-normal">Idle</span>
+              </button>
+            </div>
+
+            <div className="flex flex-wrap gap-3 mt-4 pt-4 border-t border-neutral-800">
+              <button
+                type="button"
+                onClick={triggerFlash}
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-white rounded-lg text-xs font-mono font-semibold flex items-center gap-2 border border-neutral-700"
+              >
+                <Zap className="w-3.5 h-3.5 text-yellow-400" />
+                <span>Test Tally Flash (Strobe)</span>
+              </button>
+
+              {(state.operatingMode === 'TP' || state.operatingMode === 'TP_P2P') && (
                 <button
                   type="button"
                   onClick={() => setState(prev => ({ ...prev, presenterCueActive: !prev.presenterCueActive }))}
-                  className={`px-3 py-2 rounded-lg text-xs font-mono font-semibold flex items-center gap-1.5 border transition-all cursor-pointer ${
+                  className={`px-4 py-2 rounded-lg text-xs font-mono font-semibold flex items-center gap-2 border transition-all ${
                     state.presenterCueActive
                       ? 'bg-red-600 text-yellow-300 border-yellow-400 animate-pulse'
                       : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border-neutral-700'
@@ -493,297 +882,10 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                   <Radio className="w-3.5 h-3.5 text-yellow-400" />
                   <span>{state.presenterCueActive ? 'Dismiss Presenter Cue' : 'Simulate Incoming Presenter Cue (0x31)'}</span>
                 </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setState(prev => ({ ...prev, tallyState: 'program' }))}
-                  className="px-3 py-2 bg-red-950 hover:bg-red-900 text-red-200 rounded-lg text-xs font-mono font-semibold flex items-center gap-1.5 border border-red-800 cursor-pointer"
-                >
-                  <span className="w-2 h-2 rounded-full bg-red-400" />
-                  <span>Simulate TP Live Program (0x32 Red)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setState(prev => ({ ...prev, tallyState: 'preview' }))}
-                  className="px-3 py-2 bg-emerald-950 hover:bg-emerald-900 text-emerald-200 rounded-lg text-xs font-mono font-semibold flex items-center gap-1.5 border border-emerald-800 cursor-pointer"
-                >
-                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                  <span>Simulate TP Preview (0x31 Green)</span>
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Tally State Controls */}
-        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6">
-          <h3 className="text-sm font-semibold text-neutral-200 uppercase tracking-wider mb-4 flex items-center gap-2">
-            <Radio className="w-4 h-4 text-red-400" />
-            <span>Tally Arbiter State Injection</span>
-          </h3>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <button
-              type="button"
-              onClick={() => setState(prev => ({ ...prev, tallyState: 'program' }))}
-              className={`p-3 rounded-xl border font-mono font-bold text-xs flex flex-col items-center gap-1 transition-all ${
-                state.tallyState === 'program'
-                  ? 'bg-red-600 text-white border-red-500 shadow-lg shadow-red-900/50'
-                  : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-red-900 hover:text-white'
-              }`}
-            >
-              <span className="w-3 h-3 rounded-full bg-red-400" />
-              <span>PROGRAM</span>
-              <span className="text-[10px] opacity-75 font-normal">Live On Air</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setState(prev => ({ ...prev, tallyState: 'preview' }))}
-              className={`p-3 rounded-xl border font-mono font-bold text-xs flex flex-col items-center gap-1 transition-all ${
-                state.tallyState === 'preview'
-                  ? 'bg-emerald-600 text-white border-emerald-500 shadow-lg shadow-emerald-900/50'
-                  : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-emerald-900 hover:text-white'
-              }`}
-            >
-              <span className="w-3 h-3 rounded-full bg-emerald-400" />
-              <span>PREVIEW</span>
-              <span className="text-[10px] opacity-75 font-normal">Next Up</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setState(prev => ({ ...prev, tallyState: 'aux' }))}
-              className={`p-3 rounded-xl border font-mono font-bold text-xs flex flex-col items-center gap-1 transition-all ${
-                state.tallyState === 'aux'
-                  ? 'bg-amber-600 text-white border-amber-500 shadow-lg shadow-amber-900/50'
-                  : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-amber-900 hover:text-white'
-              }`}
-            >
-              <span className="w-3 h-3 rounded-full bg-amber-400" />
-              <span>AUX BUS</span>
-              <span className="text-[10px] opacity-75 font-normal">Routing Aux</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setState(prev => ({ ...prev, tallyState: 'standby' }))}
-              className={`p-3 rounded-xl border font-mono font-bold text-xs flex flex-col items-center gap-1 transition-all ${
-                state.tallyState === 'standby'
-                  ? 'bg-neutral-800 text-white border-neutral-600'
-                  : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-neutral-700 hover:text-white'
-              }`}
-            >
-              <span className="w-3 h-3 rounded-full bg-neutral-600" />
-              <span>STANDBY</span>
-              <span className="text-[10px] opacity-75 font-normal">Idle</span>
-            </button>
-          </div>
-
-          <div className="flex flex-wrap gap-3 mt-4 pt-4 border-t border-neutral-800">
-            <button
-              type="button"
-              onClick={triggerFlash}
-              className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-white rounded-lg text-xs font-mono font-semibold flex items-center gap-2 border border-neutral-700"
-            >
-              <Zap className="w-3.5 h-3.5 text-yellow-400" />
-              <span>Test Tally Flash (Strobe)</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setState(prev => ({
-                ...prev,
-                isCueActive: !prev.isCueActive
-              }))}
-              className={`px-4 py-2 rounded-lg text-xs font-mono font-semibold flex items-center gap-2 border ${
-                state.isCueActive 
-                  ? 'bg-red-950 text-red-300 border-red-700' 
-                  : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border-neutral-700'
-              }`}
-            >
-              <Radio className="w-3.5 h-3.5 text-red-400" />
-              <span>{state.isCueActive ? 'Deactivate Cue CH1' : 'Trigger Cue CH1'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setState(prev => ({
-                ...prev,
-                currentScreen: prev.currentScreen === 0 ? 1 : 0
-              }))}
-              className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-lg text-xs font-mono font-semibold flex items-center gap-2 border border-neutral-700"
-            >
-              <ArrowRightLeft className="w-3.5 h-3.5 text-blue-400" />
-              <span>Toggle Screen ({state.currentScreen === 0 ? 'Tally' : 'Diagnostics'})</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Network & MycilaESPConnect Simulator */}
-        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-neutral-200 uppercase tracking-wider flex items-center gap-2">
-              <Network className="w-4 h-4 text-blue-400" />
-              <span>MycilaESPConnect & AtomPoE Ethernet Status</span>
-            </h3>
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800/80 font-mono">
-              Auto-Priority Active
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="p-4 rounded-xl bg-neutral-950 border border-neutral-800 flex items-center justify-between">
-              <div>
-                <div className="text-xs font-medium text-neutral-400">AtomPoE Cable (W5500 SPI)</div>
-                <div className="text-sm font-bold text-white mt-0.5 font-mono">
-                  {state.ethernetCableConnected ? 'Connected (Link Up)' : 'Disconnected (Unplugged)'}
-                </div>
-                <div className="text-[11px] text-neutral-500 mt-1">
-                  {state.ethernetCableConnected ? 'IEEE 802.3af PoE Power Delivering 5V' : 'Operating on USB-C fallback'}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setState(prev => {
-                  const nextState = !prev.ethernetCableConnected;
-                  return {
-                    ...prev,
-                    ethernetCableConnected: nextState,
-                    networkMode: nextState ? 'ETH' : 'WIFI'
-                  };
-                })}
-                className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold border transition-colors ${
-                  state.ethernetCableConnected
-                    ? 'bg-red-950 text-red-300 border-red-800 hover:bg-red-900'
-                    : 'bg-emerald-950 text-emerald-300 border-emerald-800 hover:bg-emerald-900'
-                }`}
-              >
-                {state.ethernetCableConnected ? 'Unplug Cable' : 'Plug In Cable'}
-              </button>
-            </div>
-
-            <div className="p-4 rounded-xl bg-neutral-950 border border-neutral-800">
-              <div className="text-xs font-medium text-neutral-400">Active Network Mode</div>
-              <div className="flex items-center gap-2 mt-1">
-                {state.networkMode === 'ETH' ? (
-                  <>
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <span className="text-sm font-mono font-bold text-white">Wired Ethernet (W5500)</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
-                    <span className="text-sm font-mono font-bold text-white">Wi-Fi Station Mode</span>
-                  </>
-                )}
-              </div>
-              <div className="text-[11px] text-neutral-400 font-mono mt-1">
-                IP: <span className="text-white">{state.networkMode === 'ETH' ? '192.168.1.185' : '192.168.1.92'}</span> (DHCP)
-              </div>
+              )}
             </div>
           </div>
-
-          <div className="mt-4 p-3 rounded-lg bg-blue-950/30 border border-blue-900/40 text-xs text-blue-300 flex items-start gap-2">
-            <Info className="w-4 h-4 shrink-0 mt-0.5 text-blue-400" />
-            <span>
-              <strong>MycilaESPConnect Behavior:</strong> When the AtomPoE Ethernet cable is plugged into a PoE switch or injector, 
-              the library detects the PHY link and automatically overrides Wi-Fi and captive portals to bind socket connections to Ethernet.
-            </span>
-          </div>
-        </div>
-
-        {/* Double Buffering Memory Analysis */}
-        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-neutral-200 uppercase tracking-wider flex items-center gap-2">
-              <Layers className="w-4 h-4 text-purple-400" />
-              <span>Double Buffering & Memory Verification</span>
-            </h3>
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-purple-950 text-purple-300 border border-purple-800/80 font-mono">
-              Zero-Flicker M5Canvas
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="p-3 rounded-xl bg-neutral-950 border border-neutral-800">
-              <div className="text-[11px] text-neutral-400">Canvas Buffer Size</div>
-              <div className="text-lg font-bold font-mono text-purple-400 mt-1">32,768 B</div>
-              <div className="text-[10px] text-neutral-500 font-mono">128 × 128 × 2 bytes (RGB565)</div>
-            </div>
-
-            <div className="p-3 rounded-xl bg-neutral-950 border border-neutral-800">
-              <div className="text-[11px] text-neutral-400">AtomS3R PSRAM Capacity</div>
-              <div className="text-lg font-bold font-mono text-emerald-400 mt-1">8,388,608 B</div>
-              <div className="text-[10px] text-neutral-500 font-mono">8 MB Octal SPI PSRAM</div>
-            </div>
-
-            <div className="p-3 rounded-xl bg-neutral-950 border border-neutral-800">
-              <div className="text-[11px] text-neutral-400">Memory Utilization</div>
-              <div className="text-lg font-bold font-mono text-blue-400 mt-1">0.39%</div>
-              <div className="text-[10px] text-emerald-400 font-mono flex items-center gap-1">
-                <CheckCircle2 className="w-3 h-3" />
-                <span>Plenty of Free RAM</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Live TSL 3.1 UDP Packet Inspector */}
-        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-neutral-200 uppercase tracking-wider flex items-center gap-2">
-              <Radio className="w-4 h-4 text-emerald-400" />
-              <span>TSL 3.1 UDP Packet Inspector (Port {state.tslPort})</span>
-            </h3>
-            <span className="text-xs font-mono text-neutral-400">
-              18 Bytes Fixed Payload
-            </span>
-          </div>
-
-          {lastTslPacket ? (
-            <div className="bg-neutral-950 rounded-xl p-4 border border-neutral-800 font-mono text-xs space-y-3">
-              <div className="flex justify-between items-center text-neutral-400 text-[11px] border-b border-neutral-800 pb-2">
-                <span>Destination: <strong className="text-white">{state.taHost}:{state.tslPort}</strong></span>
-                <span>Timestamp: <strong className="text-white">{lastTslPacket.timestamp}</strong></span>
-                <span>Channel: <strong className="text-white">CH {lastTslPacket.channel}</strong></span>
-                <span>State: <strong className={lastTslPacket.live ? 'text-red-400' : 'text-neutral-400'}>
-                  {lastTslPacket.live ? 'LIVE (RED TALLY)' : 'STANDBY'}
-                </strong></span>
-              </div>
-
-              <div>
-                <div className="text-[11px] text-neutral-500 uppercase tracking-wider mb-1">Raw Hex Stream:</div>
-                <div className="bg-neutral-900/80 p-2.5 rounded-lg border border-neutral-800 text-emerald-400 tracking-widest text-[11px] break-all">
-                  {lastTslPacket.hex}
-                </div>
-              </div>
-
-              <div className="text-[11px] text-neutral-400 grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <div className="p-2 bg-neutral-900 rounded border border-neutral-800">
-                  <span className="text-neutral-500">Byte 0 (Address):</span>
-                  <div className="text-white font-bold">0x01 (Display 0, Ch 1)</div>
-                </div>
-                <div className="p-2 bg-neutral-900 rounded border border-neutral-800">
-                  <span className="text-neutral-500">Byte 1 (Tally Control):</span>
-                  <div className="text-white font-bold">
-                    {lastTslPacket.live ? '0x32 (Full Bright + Red)' : '0x30 (Full Bright, Off)'}
-                  </div>
-                </div>
-                <div className="p-2 bg-neutral-900 rounded border border-neutral-800">
-                  <span className="text-neutral-500">Bytes 2-17 (ASCII):</span>
-                  <div className="text-white font-bold">&quot;R3 Pres         &quot;</div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="bg-neutral-950 rounded-xl p-6 border border-neutral-800 text-center text-neutral-500 text-xs font-mono">
-              Click the screen or &quot;Trigger Cue CH1&quot; to generate and transmit a live TSL 3.1 UDP packet.
-            </div>
-          )}
-        </div>
+        )}
       </div>
     </div>
   );

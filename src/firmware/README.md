@@ -127,16 +127,56 @@ Mathieu Carbou (the creator of `MycilaESPConnect`) maintains the modern fork of 
 
 ---
 
-## 🎛️ 4 Operating Modes & Return Cue Routing
+## 🎛️ 6 Operating Modes & Return Cue Routing
 
-The device can be configured via the web portal or REST API into any of 4 distinct operational roles:
+The device can be configured via the web portal or REST API into any of 6 distinct operational roles:
 
-| Operating Mode | Network Dependency | Screen Button Action | TSL Control Byte | Incoming UDP Behavior |
+| Operating Mode | Network Protocol | Screen Button Action | Control Signals | Display Behavior |
 | :--- | :--- | :--- | :--- | :--- |
-| **`TP`** | Tally Arbiter Server | Toggles Program return cue | `0x32` (Red Tally) | Receives TA Socket.IO & TSL return packets |
-| **`Presenter`** | Tally Arbiter Server | Toggles Preview return cue | `0x31` (Green Tally) | Receives TA Socket.IO & TSL return packets |
-| **`TP_P2P`** | **Zero-Server** (Direct P2P) | Toggles Program to Presenter | `0x32` (Red Tally) | Flashes `>>> PRESENTER CUE! <<<` when Presenter cues |
-| **`Presenter_P2P`** | **Zero-Server** (Direct P2P) | Cues paired TP console | `0x31` (Green Tally) | Screen lights RED (Program) / GREEN (Preview) from TP |
+| **`TP`** | Tally Arbiter Server | Toggles Program return cue | `0x32` (Red Tally) | Multi-source bus tally & clock |
+| **`Presenter`** | Tally Arbiter Server | Toggles Preview return cue | `0x31` (Green Tally) | Multi-source bus tally & clock |
+| **`TP_P2P`** | Standalone P2P (UDP 8910) | Toggles Program to Presenter | `0x32` (Red Tally) | Flashes `>>> PRESENTER CUE! <<<` when cued |
+| **`Presenter_P2P`** | Standalone P2P (UDP 8910) | Cues paired TP console | `0x31` (Green Tally) | Lights RED (Program) / GREEN (Preview) |
+| **`ETC_CueSystem`** | ETC CueSystem UDP (Port 4000) | Sends Stage ACK to Hub | `CS,<ch>,ACK\n` | Amber (STANDBY) & Green (GO!) with [ACK] badge |
+| **`NMOS_IS07`** | AMWA NMOS IS-07 / ST 2110 | Toggles Live On-Air state | JSON state event | Red (ON AIR) / Idle with IS-04 registry sync |
+
+---
+
+## 🎭 ETC CueSystem Stage Protocol
+Direct compatibility with ETC CueSystem hubs used in theatrical productions and opera houses:
+1. **Outstation Listening:** Listens on UDP port `4000` (configurable) for standard ASCII CueSystem commands:
+   * `CS,<ch>,STANDBY` $\to$ Screen turns **Amber** with large clock and channel name.
+   * `CS,<ch>,GO` $\to$ Screen turns **Emerald Green** with "GO!" banner.
+   * `CS,<ch>,OFF` $\to$ Screen returns to idle.
+2. **Performer Acknowledgment:** When the performer or stage hand presses the AtomS3R front LCD button, the device transmits `CS,<channel>,ACK\n` back to the CueSystem Hub IP, displaying an **[ACKNOWLEDGED]** confirmation badge on-screen.
+
+---
+
+## 📡 AMWA NMOS IS-07 Event & Tally (SMPTE ST 2110)
+Integrates into modern IP broadcast environments alongside SMPTE ST 2110 routing infrastructures:
+1. **IS-04 Discovery & Registration:** Points to the studio NMOS Registration Server (default port `8235`).
+2. **IS-07 State Emitter:** Emits and receives structured JSON state tally events:
+   ```json
+   {
+     "message_type": "state",
+     "source_id": "m5atoms3r-tally-source-01",
+     "topic": "device/tally/state",
+     "payload": { "value": true }
+   }
+   ```
+3. **Screen Button:** Toggles the node's broadcast state between On-Air (Red) and Off-Air (Idle).
+
+---
+
+## 🌐 Network IP Configuration (DHCP vs. Static IP)
+Studio installations often run on dedicated broadcast VLANs without DHCP servers. The firmware provides full IP stack configuration:
+* **DHCP (Automatic):** Standard dynamic address resolution from studio routers.
+* **Static IP (Manual):** Fixed network configuration persisted in NVS Preferences:
+  * **Static IP Address** (e.g. `192.168.1.150`)
+  * **Subnet Mask** (e.g. `255.255.255.0`)
+  * **Default Gateway** (e.g. `192.168.1.1`)
+  * **Primary DNS Server** (e.g. `8.8.8.8`)
+* Automatically applied to both W5500 SPI Ethernet (`ETH.config(...)`) and Wi-Fi STA before network stack initialization.
 
 ---
 
@@ -144,16 +184,8 @@ The device can be configured via the web portal or REST API into any of 4 distin
 
 When operating in **Presenter no Tally Arbiter** or **TP no Tally Arbiter** mode, devices communicate directly over UDP port `8910` without any external server or router configuration:
 
-1. **Service Registration:** Every device registers the DNS-SD service `_cuelx-tally._udp` on the local network along with TXT records:
-   * `role`: `presenter` or `tp`
-   * `mode`: `p2p` or `ta`
-   * `group`: Isolation group name (e.g. `Studio-1`, `Studio-2`)
-   * `name`: Device broadcast name (e.g. `M5AtomS3R-Presenter-01`)
-2. **One-Click Pairing:** 
-   * Navigate to `http://<device-ip>/` in your browser.
-   * Click **Scan for Local CueLX / TSL Peers**.
-   * A list of nearby units appears with their role and IP.
-   * Click **Pair** next to the desired peer unit. The target IP is saved to NVS Preferences.
-3. **Multi-Pair Coexistence:**
-   * By setting the **Pairing Group** (e.g., `Studio-1` on Pair A, and `Studio-2` on Pair B), multiple independent TP and Presenter units run concurrently on the same local subnet without cross-talk or cue collisions.
+1. **Service Registration:** Every device registers the DNS-SD service `_cuelx-tally._udp` on the local network along with TXT records (`role`, `mode`, `group`, `name`).
+2. **One-Click Pairing:** The embedded web portal scans the local subnet and enables instant one-click pairing.
+3. **Multi-Pair Coexistence:** Setting the **Pairing Group** (e.g., `Studio-1`, `Studio-2`) isolates multiple pairs on the same subnet without cross-talk.
+
 

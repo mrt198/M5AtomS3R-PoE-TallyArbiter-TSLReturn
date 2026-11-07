@@ -124,16 +124,38 @@ char tallyarbiter_port[6]     = "4455";
 char tallyarbiter_TSLport[6]  = "8910";
 bool LAST_MSG                 = false;
 
-// Operating Modes & Point-to-Point (P2P) Pairing
+// Operating Modes:
 // - "TP": Technical Producer with Tally Arbiter (button sends TSL Program)
 // - "Presenter": Presenter with Tally Arbiter (button sends TSL Preview)
 // - "Presenter_P2P": Presenter no Tally Arbiter (P2P direct to paired TP)
 // - "TP_P2P": TP no Tally Arbiter (P2P direct to paired Presenter)
+// - "ETC_CueSystem": ETC CueSystem Outstation (Theatrical Cue Light with Acknowledge)
+// - "NMOS_IS07": NMOS IS-07 Event & Tally (SMPTE ST 2110 IP Broadcast)
 String operatingMode    = "TP";           // Default mode
 String pairingGroup     = "Studio-1";     // mDNS / DNS-SD pairing group
 String pairedTargetIP   = "";             // Target IP of paired unit in P2P mode
 String pairedTargetName = "";             // Target device name in P2P mode
 bool presenterCueActive = false;          // Active on TP unit when Presenter cues
+
+// ETC CueSystem Settings
+char cuesystem_host[40]   = "192.168.1.100"; // CueSystem Hub / Controller IP
+char cuesystem_port[6]    = "4000";          // CueSystem UDP Port (default 4000)
+int  cuesystem_channel    = 1;               // Cue Channel (1-24)
+bool cuesystem_ack_active = false;           // Acknowledged standby status
+
+// NMOS IS-07 Event & Tally Settings (SMPTE ST 2110)
+char nmos_registry_host[40] = "192.168.1.50"; // NMOS IS-04 Registration Server
+char nmos_registry_port[6]  = "8235";         // NMOS Registration Port (default 8235)
+char nmos_source_id[50]     = "urn:uuid:7c9e6679-7425-4094-8f92-d6c1b35b62b1";
+char nmos_event_topic[40]   = "tally/program";
+bool nmos_is_on_air         = false;
+
+// Network IP Configuration (DHCP vs Static IP)
+bool useDHCP      = true;
+char static_ip[20]   = "192.168.1.185";
+char static_mask[20] = "255.255.255.0";
+char static_gw[20]   = "192.168.1.1";
+char static_dns[20]  = "192.168.1.1";
 
 // Brightness levels (0-255 scale for M5Unified)
 const uint8_t brightnessLevels[] = { 40, 90, 160, 255 };
@@ -173,6 +195,8 @@ bool doubleBufferEnabled = false;
 
 // Forward Declarations
 void sendtally(int channel, bool live);
+void sendCueAck();
+void sendNMOSTally(bool live);
 void processIncomingTSL();
 void evaluateMode();
 void showSettings();
@@ -181,6 +205,7 @@ void renderScreen();
 void updateBrightness();
 void connectToServer();
 void disconnectFromServer();
+void applyNetworkIPConfig();
 void socket_event(socketIOmessageType_t type, uint8_t *payload, size_t length);
 void socket_Connected(const char *payload, size_t length);
 void socket_Flash();
@@ -209,13 +234,38 @@ bool isTP() {
   return operatingMode == "TP" || operatingMode == "TP_P2P";
 }
 
+bool isETCCueSystem() {
+  return operatingMode == "ETC_CueSystem";
+}
+
+bool isNMOSIS07() {
+  return operatingMode == "NMOS_IS07";
+}
+
 bool usesTallyArbiter() {
-  return !isP2PMode();
+  return operatingMode == "TP" || operatingMode == "Presenter";
 }
 
 // ==========================================
-// Network Helper Utilities
+// Network Helper Utilities & IP Configuration
 // ==========================================
+void applyNetworkIPConfig() {
+  if (!useDHCP && strlen(static_ip) > 0 && strlen(static_mask) > 0 && strlen(static_gw) > 0) {
+    IPAddress ip, mask, gw, dns;
+    if (ip.fromString(static_ip) && mask.fromString(static_mask) && gw.fromString(static_gw)) {
+      if (!dns.fromString(static_dns)) {
+        dns = gw;
+      }
+      logger(String("[Network] Applying Static IP Configuration: ") + static_ip + ", Mask: " + static_mask + ", GW: " + static_gw + ", DNS: " + static_dns, "info");
+      ETH.config(ip, gw, mask, dns);
+      WiFi.config(ip, gw, mask, dns);
+      return;
+    }
+  }
+  logger("[Network] Configuring DHCP (Automatic IP Assignment)", "info");
+  ETH.config(IPAddress(0, 0, 0, 0), IPAddress(0, 0, 0, 0), IPAddress(0, 0, 0, 0));
+}
+
 bool isEthernetActive() {
   return ETH.linkUp() && ETH.localIP() != IPAddress(0, 0, 0, 0);
 }
@@ -299,13 +349,108 @@ void sendtally(int channel, bool live) {
 }
 
 // ==========================================
-// TSL 3.1 UDP Packet Receiver (P2P & Direct)
+// ETC CueSystem Acknowledge Packet Sender
+// ==========================================
+void sendCueAck() {
+  if (!networkConnected) return;
+  cuesystem_ack_active = true;
+  String ackMsg = String("CS,") + String(cuesystem_channel) + ",ACK\n";
+  udp.beginPacket(cuesystem_host, atoi(cuesystem_port));
+  udp.write((const uint8_t*)ackMsg.c_str(), ackMsg.length());
+  udp.endPacket();
+  logger(String("[ETC CueSystem] Sent Acknowledge for Channel ") + String(cuesystem_channel) + " to " + cuesystem_host + ":" + cuesystem_port, "info");
+  renderScreen();
+}
+
+// ==========================================
+// NMOS IS-07 Event & Tally Sender
+// ==========================================
+void sendNMOSTally(bool live) {
+  if (!networkConnected) return;
+  nmos_is_on_air = live;
+  JSONVar msg;
+  msg["message_type"] = "state";
+  msg["source_id"] = nmos_source_id;
+  msg["event_type"] = "boolean";
+  msg["payload"]["value"] = live;
+  String jsonStr = JSON.stringify(msg);
+
+  udp.beginPacket(nmos_registry_host, atoi(nmos_registry_port));
+  udp.write((const uint8_t*)jsonStr.c_str(), jsonStr.length());
+  udp.endPacket();
+  logger(String("[NMOS IS-07] Emitted event on ") + nmos_event_topic + ": " + (live ? "TRUE (On-Air)" : "FALSE (Standby)"), "info");
+  renderScreen();
+}
+
+// ==========================================
+// Incoming Packet Receiver (TSL, ETC CueSystem & NMOS IS-07)
 // ==========================================
 void processIncomingTSL() {
   int packetSize = udp.parsePacket();
-  if (packetSize >= 18) {
-    byte packetBuffer[64];
-    int len = udp.read(packetBuffer, sizeof(packetBuffer));
+  if (packetSize > 0) {
+    byte packetBuffer[256];
+    int len = udp.read(packetBuffer, sizeof(packetBuffer) - 1);
+    if (len <= 0) return;
+    packetBuffer[len] = '\0';
+
+    // 1. Check for ETC CueSystem packet (ASCII text starting with 'CS' or 'CUE')
+    if (isETCCueSystem()) {
+      String msg = String((char*)packetBuffer);
+      msg.trim();
+      if (msg.startsWith("CS,") || msg.startsWith("CUE:")) {
+        char delimiter = msg.startsWith("CS,") ? ',' : ':';
+        int firstDelim = msg.indexOf(delimiter);
+        int secondDelim = msg.indexOf(delimiter, firstDelim + 1);
+        if (firstDelim > 0 && secondDelim > 0) {
+          int ch = msg.substring(firstDelim + 1, secondDelim).toInt();
+          String stateCmd = msg.substring(secondDelim + 1);
+          stateCmd.toUpperCase();
+          if (ch == cuesystem_channel || ch == 0) {
+            if (stateCmd == "STANDBY") {
+              actualType = "\"standby\"";
+              actualColor = "#FFA500"; // Amber
+              cuesystem_ack_active = false;
+              logger(String("[ETC CueSystem] Channel ") + String(cuesystem_channel) + " STANDBY received", "info");
+            } else if (stateCmd == "GO") {
+              actualType = "\"program\"";
+              actualColor = "#00FF00"; // Green
+              cuesystem_ack_active = false;
+              logger(String("[ETC CueSystem] Channel ") + String(cuesystem_channel) + " GO received", "info");
+            } else if (stateCmd == "OFF") {
+              actualType = "";
+              actualColor = "";
+              cuesystem_ack_active = false;
+              logger(String("[ETC CueSystem] Channel ") + String(cuesystem_channel) + " OFF received", "info");
+            }
+            renderScreen();
+            return;
+          }
+        }
+      }
+    }
+
+    // 2. Check for NMOS IS-07 JSON packet (starts with '{')
+    if (isNMOSIS07()) {
+      if (packetBuffer[0] == '{') {
+        JSONVar obj = JSON.parse((char*)packetBuffer);
+        if (obj.hasOwnProperty("payload") && obj["payload"].hasOwnProperty("value")) {
+          bool val = (bool)obj["payload"]["value"];
+          nmos_is_on_air = val;
+          if (val) {
+            actualType = "\"program\"";
+            actualColor = "#FF0000";
+          } else {
+            actualType = "";
+            actualColor = "";
+          }
+          logger(String("[NMOS IS-07] Tally event updated: ") + (val ? "ON-AIR" : "STANDBY"), "info");
+          renderScreen();
+          return;
+        }
+      }
+    }
+
+    // 3. Standard TSL 3.1 UDP packet (18 bytes)
     if (len >= 18) {
       byte ctrl = packetBuffer[1];
       bool redTally = (ctrl & REDTALLY) != 0;
@@ -316,8 +461,6 @@ void processIncomingTSL() {
       textBuf[16] = '\0';
       String senderName = String(textBuf);
       senderName.trim();
-
-      IPAddress remoteIP = udp.remoteIP();
 
       // In P2P standalone mode:
       if (isP2PMode()) {
@@ -339,11 +482,7 @@ void processIncomingTSL() {
           renderScreen();
         } else if (isTP()) {
           // TP unit receives cue / preview call from Presenter:
-          if (greenTally) {
-            presenterCueActive = true;
-          } else {
-            presenterCueActive = false;
-          }
+          presenterCueActive = greenTally;
           if (senderName.length() > 0 && (pairedTargetName.length() == 0 || pairedTargetName == "Unassigned")) {
             pairedTargetName = senderName;
           }
@@ -374,6 +513,10 @@ void renderScreen() {
       bgColor = TFT_GREEN;
       textColor = TFT_BLACK;
       statusLabel = "PREVIEW";
+    } else if (actualType == "\"standby\"") {
+      bgColor = TFT_ORANGE;
+      textColor = TFT_BLACK;
+      statusLabel = "STANDBY";
     } else if (actualType == "\"aux\"") {
       bgColor = TFT_ORANGE;
       textColor = TFT_BLACK;
@@ -431,17 +574,35 @@ void renderScreen() {
       else if (operatingMode == "Presenter") roleBadge = "[PRES (TA)]";
       else if (operatingMode == "Presenter_P2P") roleBadge = "[P2P PRES]";
       else if (operatingMode == "TP_P2P") roleBadge = "[P2P TP]";
+      else if (operatingMode == "ETC_CueSystem") roleBadge = "[ETC CUE]";
+      else if (operatingMode == "NMOS_IS07") roleBadge = "[NMOS-07]";
       g->print(roleBadge);
 
       g->setCursor(68, 86);
-      if (isP2PMode()) {
+      if (isETCCueSystem()) {
+        g->print("Ch: " + String(cuesystem_channel));
+      } else if (isNMOSIS07()) {
+        g->print("IS-07");
+      } else if (isP2PMode()) {
         g->print("Grp: " + pairingGroup.substring(0, 6));
       } else {
         g->print(socket.isConnected() ? "TA: ONLINE" : "TA: OFFLINE");
       }
 
       g->setCursor(4, 98);
-      if (isPresenter()) {
+      if (isETCCueSystem()) {
+        if (cuesystem_ack_active) {
+          g->setTextColor(TFT_GREEN, bgColor);
+          g->print("[ACKNOWLEDGED]");
+        } else {
+          g->setTextColor(textColor, bgColor);
+          g->print("Ack: PENDING");
+        }
+      } else if (isNMOSIS07()) {
+        g->setTextColor(textColor, bgColor);
+        g->print("Topic: ");
+        g->print(String(nmos_event_topic).substring(0, 9));
+      } else if (isPresenter()) {
         g->print("Cue(PVW): ");
         if (ch1state) {
           g->setTextColor(TFT_GREEN, bgColor);
@@ -468,7 +629,7 @@ void renderScreen() {
         g->print(">>> PRESENTER CUE! <<<");
       } else {
         g->setTextColor(textColor, bgColor);
-        String netStr = String("IP:") + getNetworkIPStr();
+        String netStr = String("IP:") + getNetworkIPStr() + (useDHCP ? " (D)" : " (S)");
         g->print(netStr.substring(0, 19));
       }
     };
@@ -501,37 +662,59 @@ void renderScreen() {
       g->println(operatingMode);
 
       g->setCursor(4, 32);
-      g->print("Grp:  ");
-      g->println(pairingGroup);
-
-      g->setCursor(4, 44);
-      g->print("Peer: ");
-      g->println(pairedTargetIP.length() > 0 ? pairedTargetIP : "Unpaired (B-cast)");
-
-      g->setCursor(4, 56);
-      g->print("IP:   ");
+      g->print("Net:  ");
+      g->print(useDHCP ? "DHCP " : "Static ");
       g->println(getNetworkIPStr());
 
-      g->setCursor(4, 68);
-      g->print("TSL:  ");
-      g->print(tallyarbiter_TSLport);
-      g->println(isPresenter() ? " (PVW return)" : " (PRG return)");
-
-      g->setCursor(4, 80);
-      g->print("TA:   ");
-      if (usesTallyArbiter()) {
-        g->println(socket.isConnected() ? "Connected" : "Disconnected");
+      g->setCursor(4, 44);
+      if (isETCCueSystem()) {
+        g->print("Hub:  ");
+        g->print(cuesystem_host);
+        g->print(":");
+        g->println(cuesystem_port);
+      } else if (isNMOSIS07()) {
+        g->print("Reg:  ");
+        g->print(nmos_registry_host);
+        g->print(":");
+        g->println(nmos_registry_port);
+      } else if (isP2PMode()) {
+        g->print("Peer: ");
+        g->println(pairedTargetIP.length() > 0 ? pairedTargetIP : "Unpaired (B-cast)");
       } else {
-        g->println("Disabled (P2P Mode)");
+        g->print("TA:   ");
+        g->println(socket.isConnected() ? "Connected" : "Disconnected");
       }
 
-      g->setCursor(4, 92);
+      g->setCursor(4, 56);
+      if (!useDHCP) {
+        g->print("Mask: ");
+        g->println(static_mask);
+      } else {
+        g->print("Grp:  ");
+        g->println(pairingGroup);
+      }
+
+      g->setCursor(4, 68);
+      if (!useDHCP) {
+        g->print("GW:   ");
+        g->println(static_gw);
+      } else {
+        g->print("Port: ");
+        g->println(tallyarbiter_TSLport);
+      }
+
+      g->setCursor(4, 80);
       g->print("D-Buffer: ");
       g->println(doubleBufferEnabled ? "32KB (OK)" : "Disabled");
 
-      g->setCursor(4, 104);
+      g->setCursor(4, 92);
       g->print("Free PSRAM: ");
       g->print(ESP.getFreePsram() / 1024);
+      g->println(" KB");
+
+      g->setCursor(4, 104);
+      g->print("Free Heap:  ");
+      g->print(esp_get_free_heap_size() / 1024);
       g->println(" KB");
 
       g->setCursor(4, 116);
@@ -550,6 +733,7 @@ void renderScreen() {
     }
   }
 }
+
 
 void evaluateMode() {
   renderScreen();
@@ -583,12 +767,12 @@ void setupWebServer() {
   // Web Dashboard & Status Page
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
     String html = F("<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
-                    "<title>M5AtomS3R PoE Tally & P2P</title><style>"
-                    "body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#0f172a;color:#f1f5f9;padding:16px;max-width:580px;margin:auto}"
+                    "<title>M5AtomS3R PoE Tally & Cue Controller</title><style>"
+                    "body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#0f172a;color:#f1f5f9;padding:16px;max-width:620px;margin:auto}"
                     ".card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 4px 6px rgba(0,0,0,0.3)}"
                     "h1{font-size:20px;margin:0 0 4px 0;color:#38bdf8}h2{font-size:15px;color:#94a3b8;margin:0 0 14px 0;text-transform:uppercase;letter-spacing:0.05em}"
                     ".badge{display:inline-block;padding:3px 8px;border-radius:9999px;font-size:11px;font-weight:700;margin-right:4px}"
-                    ".badge-blue{background:#0284c7;color:#fff}.badge-green{background:#16a34a;color:#fff}.badge-purple{background:#7c3aed;color:#fff}.badge-amber{background:#d97706;color:#fff}"
+                    ".badge-blue{background:#0284c7;color:#fff}.badge-green{background:#16a34a;color:#fff}.badge-purple{background:#7c3aed;color:#fff}.badge-amber{background:#d97706;color:#fff}.badge-red{background:#dc2626;color:#fff}.badge-cyan{background:#0891b2;color:#fff}"
                     "label{display:block;margin-top:12px;font-size:12px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:0.03em}"
                     "input,select{width:100%;box-sizing:border-box;background:#0f172a;border:1px solid #475569;color:#f8fafc;padding:10px;border-radius:6px;margin-top:4px;font-size:14px}"
                     "input:focus,select:focus{outline:none;border-color:#38bdf8}"
@@ -600,9 +784,11 @@ void setupWebServer() {
                     ".peer-info{font-size:13px}.peer-name{font-weight:700;color:#e2e8f0}.peer-sub{font-size:11px;color:#94a3b8}"
                     ".btn-pair{padding:6px 12px;font-size:12px;background:#7c3aed;border-radius:4px}.btn-pair:hover{background:#6d28d9}"
                     ".grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}"
+                    ".section-box{background:#172033;border:1px solid #334155;border-radius:8px;padding:14px;margin-top:14px}"
+                    ".hint{font-size:12px;color:#94a3b8;margin-top:4px}"
                     "</style></head><body>"
                     "<div class='card'>"
-                    "<h1>M5AtomS3R PoE Tally</h1>"
+                    "<h1>M5AtomS3R PoE Tally & Cue</h1>"
                     "<h2>Broadcast Cue & Tally Controller</h2>"
                     "<p style='margin:4px 0;'>Device: <strong>");
     html += DeviceName;
@@ -613,9 +799,13 @@ void setupWebServer() {
     else if (operatingMode == "Presenter") html += F("<span class='badge badge-green'>Presenter (Tally Arbiter)</span>");
     else if (operatingMode == "TP_P2P") html += F("<span class='badge badge-purple'>TP Standalone (P2P)</span>");
     else if (operatingMode == "Presenter_P2P") html += F("<span class='badge badge-amber'>Presenter Standalone (P2P)</span>");
+    else if (operatingMode == "ETC_CueSystem") html += F("<span class='badge badge-red'>ETC CueSystem Outstation</span>");
+    else if (operatingMode == "NMOS_IS07") html += F("<span class='badge badge-cyan'>NMOS IS-07 Event & Tally</span>");
     html += F("</p><p style='margin:4px 0;'>Network: <strong>");
     html += getNetworkModeStr();
-    html += F("</strong> | IP: <strong>");
+    html += F(" (");
+    html += useDHCP ? "DHCP" : "Static IP";
+    html += F(")</strong> | IP: <strong>");
     html += getNetworkIPStr();
     html += F("</strong> | Double Buffer: <strong>");
     html += doubleBufferEnabled ? "32KB OK" : "Direct";
@@ -623,7 +813,7 @@ void setupWebServer() {
                     "<form action='/save' method='POST'>"
                     "<h2>Operating Mode & Role</h2>"
                     "<label>Device Mode</label>"
-                    "<select name='mode'>"
+                    "<select name='mode' id='mode-select' onchange='updateModeUI()'>"
                     "<option value='TP'");
     if (operatingMode == "TP") html += F(" selected");
     html += F(">TP (Technical Producer with Tally Arbiter)</option>"
@@ -636,22 +826,48 @@ void setupWebServer() {
               "<option value='Presenter_P2P'");
     if (operatingMode == "Presenter_P2P") html += F(" selected");
     html += F(">Presenter no Tally Arbiter (P2P Slave)</option>"
+              "<option value='ETC_CueSystem'");
+    if (operatingMode == "ETC_CueSystem") html += F(" selected");
+    html += F(">ETC CueSystem (Stage Cue Light Outstation)</option>"
+              "<option value='NMOS_IS07'");
+    if (operatingMode == "NMOS_IS07") html += F(" selected");
+    html += F(">NMOS IS-07 Event & Tally (SMPTE ST 2110)</option>"
               "</select>"
+
+              // Section: Network IP Configuration
+              "<div class='section-box'>"
+              "<h2>Network IP Configuration</h2>"
+              "<label>IP Assignment Mode</label>"
+              "<select name='ip_dhcp' id='ip_dhcp' onchange='toggleIPFields()'>"
+              "<option value='1'");
+    if (useDHCP) html += F(" selected");
+    html += F(">DHCP (Automatic)</option>"
+              "<option value='0'");
+    if (!useDHCP) html += F(" selected");
+    html += F(">Static IP (Manual)</option>"
+              "</select>"
+              "<div id='static-ip-fields' style='display:");
+    html += useDHCP ? "none" : "block";
+    html += F(";'>"
               "<div class='grid-2'>"
-              "<div><label>Pairing Group</label><input type='text' name='group' value='");
-    html += pairingGroup;
-    html += F("'></div>"
-              "<div><label>TSL 3.1 UDP Port</label><input type='text' name='tslport' value='");
-    html += tallyarbiter_TSLport;
-    html += F("'></div></div>"
+              "<div><label>Static IP Address</label><input type='text' name='static_ip' value='");
+    html += static_ip;
+    html += F("' placeholder='192.168.1.150'></div>"
+              "<div><label>Subnet Mask</label><input type='text' name='static_mask' value='");
+    html += static_mask;
+    html += F("' placeholder='255.255.255.0'></div></div>"
               "<div class='grid-2'>"
-              "<div><label>Paired Peer IP (P2P Mode)</label><input type='text' id='peerip' name='pairedip' value='");
-    html += pairedTargetIP;
-    html += F("' placeholder='e.g. 192.168.1.50'></div>"
-              "<div><label>Paired Peer Name</label><input type='text' id='peername' name='pairedname' value='");
-    html += pairedTargetName;
-    html += F("' placeholder='e.g. Presenter-Cam1'></div></div>"
-              "<h2 style='margin-top:20px;'>Tally Arbiter Settings (If using TA)</h2>"
+              "<div><label>Default Gateway</label><input type='text' name='static_gw' value='");
+    html += static_gw;
+    html += F("' placeholder='192.168.1.1'></div>"
+              "<div><label>Primary DNS Server</label><input type='text' name='static_dns' value='");
+    html += static_dns;
+    html += F("' placeholder='8.8.8.8'></div></div>"
+              "</div></div>"
+
+              // Section: Tally Arbiter
+              "<div id='sec-ta' class='section-box'>"
+              "<h2>Tally Arbiter Settings</h2>"
               "<div class='grid-2'>"
               "<div><label>Tally Arbiter Host / IP</label><input type='text' name='host' value='");
     html += tallyarbiter_host;
@@ -662,15 +878,90 @@ void setupWebServer() {
               "<label>Listener Device Name</label><input type='text' name='devicename' value='");
     html += listenerDeviceName;
     html += F("'>"
+              "<div class='hint'>Tally Arbiter connects over WebSockets (port 4455) for multi-source tally routing.</div>"
+              "</div>"
+
+              // Section: Standalone P2P
+              "<div id='sec-p2p' class='section-box'>"
+              "<h2>Standalone P2P Settings (No Tally Arbiter)</h2>"
+              "<div class='grid-2'>"
+              "<div><label>Pairing Group</label><input type='text' name='group' value='");
+    html += pairingGroup;
+    html += F("'></div>"
+              "<div><label>TSL 3.1 UDP Port</label><input type='text' name='tslport' value='");
+    html += tallyarbiter_TSLport;
+    html += F("'></div></div>"
+              "<div class='grid-2'>"
+              "<div><label>Paired Peer IP</label><input type='text' id='peerip' name='pairedip' value='");
+    html += pairedTargetIP;
+    html += F("' placeholder='e.g. 192.168.1.50'></div>"
+              "<div><label>Paired Peer Name</label><input type='text' id='peername' name='pairedname' value='");
+    html += pairedTargetName;
+    html += F("' placeholder='e.g. Presenter-Cam1'></div></div>"
+              "<div class='hint'>P2P mode communicates directly between units using TSL 3.1 UDP packets.</div>"
+              "</div>"
+
+              // Section: ETC CueSystem
+              "<div id='sec-cuesystem' class='section-box'>"
+              "<h2>ETC CueSystem Configuration</h2>"
+              "<div class='grid-2'>"
+              "<div><label>CueSystem Hub Host / IP</label><input type='text' name='cue_host' value='");
+    html += cuesystem_host;
+    html += F("'></div>"
+              "<div><label>CueSystem UDP Port</label><input type='number' name='cue_port' value='");
+    html += String(cuesystem_port);
+    html += F("'></div></div>"
+              "<label>Cue Channel (1 - 32)</label><input type='number' name='cue_channel' min='1' max='32' value='");
+    html += String(cuesystem_channel);
+    html += F("'>"
+              "<div class='hint'>Listens for Standby (Amber) and Go (Green). Pressing button sends ACK to hub.</div>"
+              "</div>"
+
+              // Section: NMOS IS-07
+              "<div id='sec-nmos' class='section-box'>"
+              "<h2>AMWA NMOS IS-07 Event & Tally</h2>"
+              "<div class='grid-2'>"
+              "<div><label>NMOS Registration Server Host / IP</label><input type='text' name='nmos_host' value='");
+    html += nmos_registry_host;
+    html += F("'></div>"
+              "<div><label>IS-04 Registry Port</label><input type='number' name='nmos_port' value='");
+    html += String(nmos_registry_port);
+    html += F("'></div></div>"
+              "<div class='grid-2'>"
+              "<div><label>Source / Device UUID</label><input type='text' name='nmos_source' value='");
+    html += nmos_source_id;
+    html += F("'></div>"
+              "<div><label>IS-07 Event Topic</label><input type='text' name='nmos_topic' value='");
+    html += nmos_event_topic;
+    html += F("'></div></div>"
+              "<div class='hint'>Integrates with SMPTE ST 2110 IP broadcast routing & IS-07 state emitters.</div>"
+              "</div>"
+
               "<button type='submit' class='btn-save'>Save Settings & Apply</button>"
               "</form></div>"
-              "<div class='card'>"
+
+              // Discovery Card (Visible for P2P modes)
+              "<div id='sec-p2p-scan' class='card'>"
               "<h2>Zero-Conf P2P Discovery (mDNS / DNS-SD)</h2>"
               "<p style='font-size:13px;color:#94a3b8;margin:0 0 10px 0;'>Discover and pair directly with other TP and Presenter units on this local subnet without running Tally Arbiter.</p>"
               "<button type='button' class='btn-scan' onclick='scanPeers()'>Scan for Local CueLX / TSL Peers</button>"
               "<div id='peers-list' style='margin-top:12px;'></div>"
               "</div>"
+
               "<script>"
+              "function toggleIPFields(){"
+              "  var isDhcp = document.getElementById('ip_dhcp').value === '1';"
+              "  document.getElementById('static-ip-fields').style.display = isDhcp ? 'none' : 'block';"
+              "}"
+              "function updateModeUI(){"
+              "  var m = document.getElementById('mode-select').value;"
+              "  document.getElementById('sec-ta').style.display = (m==='TP'||m==='Presenter') ? 'block' : 'none';"
+              "  document.getElementById('sec-p2p').style.display = (m==='TP_P2P'||m==='Presenter_P2P') ? 'block' : 'none';"
+              "  document.getElementById('sec-p2p-scan').style.display = (m==='TP_P2P'||m==='Presenter_P2P') ? 'block' : 'none';"
+              "  document.getElementById('sec-cuesystem').style.display = (m==='ETC_CueSystem') ? 'block' : 'none';"
+              "  document.getElementById('sec-nmos').style.display = (m==='NMOS_IS07') ? 'block' : 'none';"
+              "}"
+              "updateModeUI();"
               "async function scanPeers(){"
               "  const list = document.getElementById('peers-list');"
               "  list.innerHTML = '<p style=\"color:#38bdf8;font-size:13px;\">Scanning network for _cuelx-tally._udp services...</p>';"
@@ -715,12 +1006,28 @@ void setupWebServer() {
   server.on("/api/config", HTTP_GET, [](AsyncWebServerRequest *request) {
     JSONVar obj;
     obj["operatingMode"] = operatingMode;
+    obj["useDHCP"] = useDHCP;
+    obj["staticIP"] = static_ip;
+    obj["staticMask"] = static_mask;
+    obj["staticGW"] = static_gw;
+    obj["staticDNS"] = static_dns;
+    obj["cuesystemHost"] = cuesystem_host;
+    obj["cuesystemPort"] = cuesystem_port;
+    obj["cuesystemChannel"] = cuesystem_channel;
+    obj["cuesystemAckActive"] = cuesystem_ack_active;
+    obj["nmosHost"] = nmos_registry_host;
+    obj["nmosPort"] = nmos_registry_port;
+    obj["nmosSource"] = nmos_source_id;
+    obj["nmosTopic"] = nmos_event_topic;
+    obj["nmosOnAir"] = nmos_is_on_air;
     obj["pairingGroup"] = pairingGroup;
     obj["pairedTargetIP"] = pairedTargetIP;
     obj["pairedTargetName"] = pairedTargetName;
     obj["isPresenter"] = isPresenter();
     obj["isTP"] = isTP();
     obj["isP2P"] = isP2PMode();
+    obj["isCueSystem"] = isETCCueSystem();
+    obj["isNMOS"] = isNMOSIS07();
     obj["presenterCueActive"] = presenterCueActive;
     obj["host"] = tallyarbiter_host;
     obj["port"] = tallyarbiter_port;
@@ -742,7 +1049,6 @@ void setupWebServer() {
     int n = MDNS.queryService("cuelx-tally", "udp");
     JSONVar arr;
     for (int i = 0; i < n; ++i) {
-      // Don't include self
       if (MDNS.IP(i).toString() == getNetworkIPStr()) {
         continue;
       }
@@ -799,6 +1105,50 @@ void setupWebServer() {
     if (request->hasParam("mode", true)) {
       operatingMode = request->getParam("mode", true)->value();
     }
+
+    // Network IP settings
+    if (request->hasParam("ip_dhcp", true)) {
+      useDHCP = (request->getParam("ip_dhcp", true)->value() == "1");
+    }
+    if (request->hasParam("static_ip", true)) {
+      static_ip = request->getParam("static_ip", true)->value();
+    }
+    if (request->hasParam("static_mask", true)) {
+      static_mask = request->getParam("static_mask", true)->value();
+    }
+    if (request->hasParam("static_gw", true)) {
+      static_gw = request->getParam("static_gw", true)->value();
+    }
+    if (request->hasParam("static_dns", true)) {
+      static_dns = request->getParam("static_dns", true)->value();
+    }
+
+    // ETC CueSystem settings
+    if (request->hasParam("cue_host", true)) {
+      cuesystem_host = request->getParam("cue_host", true)->value();
+    }
+    if (request->hasParam("cue_port", true)) {
+      cuesystem_port = request->getParam("cue_port", true)->value().toInt();
+    }
+    if (request->hasParam("cue_channel", true)) {
+      cuesystem_channel = request->getParam("cue_channel", true)->value().toInt();
+    }
+
+    // NMOS IS-07 settings
+    if (request->hasParam("nmos_host", true)) {
+      nmos_registry_host = request->getParam("nmos_host", true)->value();
+    }
+    if (request->hasParam("nmos_port", true)) {
+      nmos_registry_port = request->getParam("nmos_port", true)->value().toInt();
+    }
+    if (request->hasParam("nmos_source", true)) {
+      nmos_source_id = request->getParam("nmos_source", true)->value();
+    }
+    if (request->hasParam("nmos_topic", true)) {
+      nmos_event_topic = request->getParam("nmos_topic", true)->value();
+    }
+
+    // P2P and Tally Arbiter settings
     if (request->hasParam("group", true)) {
       pairingGroup = request->getParam("group", true)->value();
     }
@@ -824,8 +1174,21 @@ void setupWebServer() {
       listenerDeviceName = request->getParam("devicename", true)->value();
     }
 
+    // Persist all settings to NVS
     preferences.begin("tally-arbiter", false);
     preferences.putString("opMode", operatingMode);
+    preferences.putBool("useDHCP", useDHCP);
+    preferences.putString("staticIP", static_ip);
+    preferences.putString("staticMask", static_mask);
+    preferences.putString("staticGW", static_gw);
+    preferences.putString("staticDNS", static_dns);
+    preferences.putString("cueHost", cuesystem_host);
+    preferences.putInt("cuePort", cuesystem_port);
+    preferences.putInt("cueChan", cuesystem_channel);
+    preferences.putString("nmosHost", nmos_registry_host);
+    preferences.putInt("nmosPort", nmos_registry_port);
+    preferences.putString("nmosSrc", nmos_source_id);
+    preferences.putString("nmosTopic", nmos_event_topic);
     preferences.putString("pairGroup", pairingGroup);
     preferences.putString("pairIP", pairedTargetIP);
     preferences.putString("pairName", pairedTargetName);
@@ -835,9 +1198,12 @@ void setupWebServer() {
     preferences.putString("taListenerName", listenerDeviceName);
     preferences.end();
 
+    // Reapply IP configuration immediately
+    applyNetworkIPConfig();
+
     // Re-register mDNS TXT records
-    MDNS.addServiceTxt("cuelx-tally", "udp", "role", isPresenter() ? "presenter" : "tp");
-    MDNS.addServiceTxt("cuelx-tally", "udp", "mode", isP2PMode() ? "p2p" : "ta");
+    MDNS.addServiceTxt("cuelx-tally", "udp", "role", isPresenter() ? "presenter" : (isTP() ? "tp" : (isETCCueSystem() ? "cue" : "nmos")));
+    MDNS.addServiceTxt("cuelx-tally", "udp", "mode", operatingMode.c_str());
     MDNS.addServiceTxt("cuelx-tally", "udp", "group", pairingGroup.c_str());
     MDNS.addServiceTxt("cuelx-tally", "udp", "name", listenerDeviceName.c_str());
 
@@ -850,8 +1216,8 @@ void setupWebServer() {
     request->send(200, "text/html", "<html><body style='background:#0f172a;color:#f1f5f9;font-family:sans-serif;padding:30px;'>"
                                     "<h2>Configuration Saved!</h2>"
                                     "<p>Mode: <strong>" + operatingMode + "</strong></p>"
+                                    "<p>IP Mode: <strong>" + (useDHCP ? "DHCP (Automatic)" : "Static IP: " + static_ip) + "</strong></p>"
                                     "<p>Group: <strong>" + pairingGroup + "</strong></p>"
-                                    "<p>Peer: <strong>" + (pairedTargetIP.length() > 0 ? pairedTargetIP : "Unpaired (Broadcast)") + "</strong></p>"
                                     "<a href='/' style='color:#38bdf8;text-decoration:none;font-weight:600;'>Return to Dashboard</a></body></html>");
 
     renderScreen();
@@ -919,6 +1285,42 @@ void setup() {
   if (preferences.getString("opMode").length() > 0) {
     operatingMode = preferences.getString("opMode");
   }
+  if (preferences.isKey("useDHCP")) {
+    useDHCP = preferences.getBool("useDHCP", true);
+  }
+  if (preferences.getString("staticIP").length() > 0) {
+    static_ip = preferences.getString("staticIP");
+  }
+  if (preferences.getString("staticMask").length() > 0) {
+    static_mask = preferences.getString("staticMask");
+  }
+  if (preferences.getString("staticGW").length() > 0) {
+    static_gw = preferences.getString("staticGW");
+  }
+  if (preferences.getString("staticDNS").length() > 0) {
+    static_dns = preferences.getString("staticDNS");
+  }
+  if (preferences.getString("cueHost").length() > 0) {
+    cuesystem_host = preferences.getString("cueHost");
+  }
+  if (preferences.isKey("cuePort")) {
+    cuesystem_port = preferences.getInt("cuePort", 4000);
+  }
+  if (preferences.isKey("cueChan")) {
+    cuesystem_channel = preferences.getInt("cueChan", 1);
+  }
+  if (preferences.getString("nmosHost").length() > 0) {
+    nmos_registry_host = preferences.getString("nmosHost");
+  }
+  if (preferences.isKey("nmosPort")) {
+    nmos_registry_port = preferences.getInt("nmosPort", 8235);
+  }
+  if (preferences.getString("nmosSrc").length() > 0) {
+    nmos_source_id = preferences.getString("nmosSrc");
+  }
+  if (preferences.getString("nmosTopic").length() > 0) {
+    nmos_event_topic = preferences.getString("nmosTopic");
+  }
   if (preferences.getString("pairGroup").length() > 0) {
     pairingGroup = preferences.getString("pairGroup");
   }
@@ -962,9 +1364,9 @@ void setup() {
         logger("[ETH] Cable connected (Link UP)", "info");
         break;
       case ARDUINO_EVENT_ETH_GOT_IP:
-        logger(String("[ETH] IP Assigned (DHCP): ") + ETH.localIP().toString(), "info");
+        logger(String("[ETH] IP Assigned (") + (useDHCP ? "DHCP" : "Static") + "): " + ETH.localIP().toString(), "info");
         networkConnected = true;
-        udp.begin(atoi(tallyarbiter_TSLport));
+        udp.begin(isETCCueSystem() ? cuesystem_port : atoi(tallyarbiter_TSLport));
         if (usesTallyArbiter()) {
           connectToServer();
         }
@@ -991,11 +1393,12 @@ void setup() {
   });
 
   // 2. Explicitly initialize SPI and W5500 for AtomS3R + AtomPoE
-  // Ensures Ethernet works 100% in Arduino IDE (where library macro flags don't propagate)
+  // Apply static IP or DHCP configuration to Ethernet stack
   logger("[ETH] Initializing W5500 SPI (SCK:5, CS:6, MISO:7, MOSI:8)...", "info");
   SPI.begin(ETH_PHY_SPI_SCK, ETH_PHY_SPI_MISO, ETH_PHY_SPI_MOSI, ETH_PHY_CS);
+  applyNetworkIPConfig();
   if (ETH.begin(ETH_PHY_TYPE, ETH_PHY_ADDR, ETH_PHY_CS, ETH_PHY_IRQ, ETH_PHY_RST, SPI)) {
-    logger("[ETH] W5500 SPI Ethernet initialized. Waiting for PoE link / DHCP...", "info");
+    logger(String("[ETH] W5500 SPI Ethernet initialized. Waiting for PoE link / ") + (useDHCP ? "DHCP" : "Static IP") + "...", "info");
   } else {
     logger("[ETH] ERROR: ETH.begin returned false! Check AtomPoE hardware seating.", "error");
   }
@@ -1007,7 +1410,7 @@ void setup() {
     if (current == Mycila::ESPConnect::State::NETWORK_CONNECTED) {
       networkConnected = true;
       logger("[Network] Connected! IP: " + getNetworkIPStr(), "info");
-      udp.begin(atoi(tallyarbiter_TSLport));
+      udp.begin(isETCCueSystem() ? cuesystem_port : atoi(tallyarbiter_TSLport));
       if (usesTallyArbiter()) {
         connectToServer();
       }
@@ -1037,16 +1440,16 @@ void setup() {
   ArduinoOTA.setPassword("tallyarbiter");
   ArduinoOTA.begin();
 
-  // Initialize mDNS & register DNS-SD service for local P2P discovery
+  // Initialize mDNS & register DNS-SD service for local discovery
   if (MDNS.begin(mdnsdotlocalurl.c_str())) {
     MDNS.addService("CueLX", "tcp", 80);
     MDNS.addService("http", "tcp", 80);
-    MDNS.addService("cuelx-tally", "udp", atoi(tallyarbiter_TSLport));
-    MDNS.addServiceTxt("cuelx-tally", "udp", "role", isPresenter() ? "presenter" : "tp");
-    MDNS.addServiceTxt("cuelx-tally", "udp", "mode", isP2PMode() ? "p2p" : "ta");
+    MDNS.addService("cuelx-tally", "udp", isETCCueSystem() ? cuesystem_port : atoi(tallyarbiter_TSLport));
+    MDNS.addServiceTxt("cuelx-tally", "udp", "role", isPresenter() ? "presenter" : (isTP() ? "tp" : (isETCCueSystem() ? "cue" : "nmos")));
+    MDNS.addServiceTxt("cuelx-tally", "udp", "mode", operatingMode.c_str());
     MDNS.addServiceTxt("cuelx-tally", "udp", "group", pairingGroup.c_str());
     MDNS.addServiceTxt("cuelx-tally", "udp", "name", listenerDeviceName.c_str());
-    logger(String("[mDNS] Service _cuelx-tally._udp registered. Group: ") + pairingGroup + ", Role: " + (isPresenter() ? "Presenter" : "TP"), "info");
+    logger(String("[mDNS] Service _cuelx-tally._udp registered. Mode: ") + operatingMode + ", Name: " + listenerDeviceName, "info");
   }
 
   // Initial Screen Render
@@ -1061,7 +1464,7 @@ void loop() {
   espConnect.loop();
   ArduinoOTA.handle();
 
-  // Handle incoming TSL 3.1 UDP packets (bidirectional cues and tally)
+  // Handle incoming packets (TSL 3.1 UDP, ETC CueSystem, NMOS IS-07)
   processIncomingTSL();
 
   // CRITICAL: Only run socket.loop() when network is connected and Tally Arbiter mode is active!
@@ -1074,12 +1477,26 @@ void loop() {
   // ----------------------------------------
   // Button Handling on AtomS3R Screen Button
   // ----------------------------------------
-  // Single click: Toggle CH1 Cue
+  // Single click: Mode-aware action
   if (M5.BtnA.wasClicked()) {
-    logger("[Button] Single Click: Toggle Cue CH1", "info");
-    ch1state = !ch1state;
-    if (networkConnected) {
-      sendtally(1, ch1state);
+    if (isETCCueSystem()) {
+      logger(String("[Button] CueSystem Acknowledge button pressed for CH ") + String(cuesystem_channel), "info");
+      cuesystem_ack_active = !cuesystem_ack_active;
+      if (networkConnected) {
+        sendCueAck();
+      }
+    } else if (isNMOSIS07()) {
+      logger("[Button] NMOS IS-07 Tally toggle pressed", "info");
+      nmos_is_on_air = !nmos_is_on_air;
+      if (networkConnected) {
+        sendNMOSTally(nmos_is_on_air);
+      }
+    } else {
+      logger(String("[Button] Single Click: Toggle Cue CH1 (") + (isPresenter() ? "Presenter Preview" : "TP Program") + ")", "info");
+      ch1state = !ch1state;
+      if (networkConnected) {
+        sendtally(1, ch1state);
+      }
     }
     renderScreen();
   }
@@ -1112,12 +1529,14 @@ void loop() {
   }
 
   // ----------------------------------------
-  // Smooth 1-Second Clock & TSL Refresh
+  // Smooth 1-Second Clock & Periodic Refresh
   // ----------------------------------------
   if (millis() - lastRefreshTime >= REFRESH_INTERVAL) {
     lastRefreshTime = millis();
     if (networkConnected) {
-      sendtally(1, ch1state);
+      if (isTP()) {
+        sendtally(1, ch1state);
+      }
     }
     renderScreen();
   }

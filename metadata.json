@@ -1,6 +1,6 @@
 {
   "name": "M5AtomS3R AtomPoE Tally & TSL Listener",
-  "description": "Firmware port and configuration suite for M5Stack M5AtomS3R with AtomPoE base, featuring MycilaESPConnect Ethernet, double-buffered GC9107 LCD, and Tally Arbiter / TSL 3.1 UDP support.",
+  "description": "Firmware port and configuration suite for M5Stack M5AtomS3R with AtomPoE base, featuring MycilaESPConnect Ethernet, double-buffered GC9107 LCD, Tally Arbiter, TSL 3.1 UDP, ETC CueSystem, NMOS IS-07, and Static IP / DHCP support.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
