@@ -104,10 +104,12 @@ volatile bool ch2state = false;
 volatile bool ch3state = false;
 volatile bool ch4state = false;
 
-// NTP & Timezone Setup
+// NTP & Timezone Setup (Requirement 1)
 const char* ntpServer1 = "0.pool.ntp.org";
 const char* ntpServer2 = "time.nist.gov";
-const char* posix_time_zone_info = "GMT0BST,M3.5.0/1,M10.5.0"; // Europe/London
+String timezone_name = "Europe/London";                       // Timezone identifier
+String posix_time_zone_info = "GMT0BST,M3.5.0/1,M10.5.0";     // POSIX TZ string
+String custom_tz_posix = "";                                  // Custom POSIX string if requested
 const char* daylightOffset_sec = "3600";
 
 // Refresh interval for TSL keepalive (1 second)
@@ -136,6 +138,8 @@ bool LAST_MSG                 = false;
 // - "TSL_31": TSL 3.1 Listener (UDP or TCP, name displayed in centre)
 // - "TSL_50": TSL 5.0 Listener (UDP or TCP, name displayed in centre)
 // - "OSC_CueLight": OSC Cue Light for iOS (RSMCK protocol: standby_ack, standby, go, off, banner)
+// - "Promptside": Promptside Theatrical Cue Light Outstation (promptside.co)
+// - "MSC_RTP_MIDI": MIDI Show Control (MSC) over rtpMIDI (RP-002)
 String operatingMode    = "TP";           // Default mode
 String pairingGroup     = "Studio-1";     // mDNS / DNS-SD pairing group
 String pairedTargetIP   = "";             // Target IP of paired unit in P2P mode
@@ -213,6 +217,25 @@ bool   osccue_ack_done      = false;             // Has performer acknowledged s
 IPAddress osccue_last_sender_ip = IPAddress(255, 255, 255, 255);
 uint16_t osccue_last_sender_port = 53000;
 
+// Promptside Theatrical Cue Light Outstation (Requirement 2: promptside.co/system/)
+int    promptside_port          = 8000;            // Standard Promptside UDP OSC port (default 8000)
+String promptside_channel       = "1";             // Outstation Channel or Wing ID (e.g. "1", "LX", "FLYS", "STAGE LEFT")
+String promptside_wing_label    = "STAGE LEFT";    // Outstation Wing Name displayed at top of screen
+String promptside_cue_text      = "";              // Incoming cue text or note
+String promptside_state         = "off";           // "off", "standby_ack", "go"
+bool   promptside_ack_done      = false;           // Operator acknowledged standby
+IPAddress promptside_desk_ip    = IPAddress(255, 255, 255, 255);
+uint16_t  promptside_desk_port  = 8000;
+
+// MIDI Show Control (MSC) over rtpMIDI (Requirement 3: RP-002)
+int    msc_rtpmidi_port         = 5004;            // Standard RTP-MIDI UDP Port
+int    msc_device_id            = 0x7F;            // 0x7F = All-Call (127), or 0-111
+int    msc_cmd_format           = 0x7F;            // 0x7F = All-types, 0x01 = Lighting, 0x10 = Sound, 0x20 = Rigging
+String msc_target_cue           = "";              // Optional target cue filter (empty = any)
+String msc_current_cue          = "";              // Last received cue number (e.g. "42", "12.5")
+String msc_last_command         = "STOP";          // Last received command string
+String msc_state                = "off";           // "off", "standby", "go"
+
 // Wi-Fi Precedence State (disable Wi-Fi when PoE Ethernet is active)
 bool   wifiDisabledForEth   = false;
 unsigned long lastEthCheckTime = 0;
@@ -281,6 +304,10 @@ void processTSL31Packet(uint8_t* buf, int len);
 void processTSL50Packet(uint8_t* buf, int len);
 void processOSCCueLightPacket(uint8_t* buf, int len, IPAddress remoteIP, uint16_t remotePort);
 void sendOSCCueLightState(String stateName);
+void processPromptsidePacket(uint8_t* buf, int len, IPAddress remoteIP, uint16_t remotePort);
+void sendPromptsideAck();
+void processMSCRTPMidiPacket(uint8_t* buf, int len, IPAddress remoteIP, uint16_t remotePort);
+void applyTimezoneConfig();
 void discoverNMOSRegistrationServer();
 void checkEthernetWifiPrecedence();
 void setupTSLTcpServer(uint16_t port);
@@ -348,6 +375,14 @@ bool isTSL50Listener() {
 
 bool isOSCCueLight() {
   return operatingMode == "OSC_CueLight";
+}
+
+bool isPromptside() {
+  return operatingMode == "Promptside";
+}
+
+bool isMSCRTPMidi() {
+  return operatingMode == "MSC_RTP_MIDI";
 }
 
 bool usesTallyArbiter() {
