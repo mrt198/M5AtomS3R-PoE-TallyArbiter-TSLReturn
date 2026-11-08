@@ -3,18 +3,19 @@ import {
   Network, 
   Zap, 
   Radio, 
-  Wifi, 
   Sun, 
   Layers, 
-  ArrowRightLeft,
-  CheckCircle2,
-  Info,
-  Server,
-  Sliders,
-  Check,
-  Disc3,
-  Theater,
-  Tv
+  ArrowRightLeft, 
+  Info, 
+  Server, 
+  Sliders, 
+  Theater, 
+  Tv, 
+  Music, 
+  Volume2, 
+  RotateCw,
+  Compass,
+  MessageSquare
 } from 'lucide-react';
 
 export interface SimulatorState {
@@ -31,7 +32,7 @@ export interface SimulatorState {
   taPort: string;
   tslPort: string;
   flashActive: boolean;
-  operatingMode: 'TP' | 'Presenter' | 'TP_P2P' | 'Presenter_P2P' | 'ETC_CueSystem' | 'NMOS_IS07';
+  operatingMode: 'TP' | 'Presenter' | 'TP_P2P' | 'Presenter_P2P' | 'ETC_CueSystem' | 'NMOS_IS07' | 'RTP_MIDI' | 'OSC';
   pairingGroup: string;
   pairedTargetIP: string;
   pairedTargetName: string;
@@ -48,12 +49,49 @@ export interface SimulatorState {
   cueChannel: number;
   cueAckActive: boolean;
   cueState: 'standby' | 'go' | 'off';
-  // AMWA NMOS IS-07 Event & Tally configuration & state
+  // AMWA NMOS IS-07 Event & Tally configuration & state (Program, Preview, Aux)
   nmosHost: string;
   nmosPort: number;
   nmosSource: string;
   nmosTopic: string;
-  nmosOnAir: boolean;
+  nmosProgramTopic: string;
+  nmosPreviewTopic: string;
+  nmosAuxTopic: string;
+  nmosOnAir: boolean; // Program (Red)
+  nmosPreview: boolean; // Preview (Green)
+  nmosAux: boolean; // Aux (Amber)
+  // rtpMIDI / AppleMIDI Configuration & State
+  rtpMidiPort: number;
+  rtpMidiChannel: number; // 0 = Omni, 1-16
+  rtpMidiTriggerType: number; // 0 = Note On/Off, 1 = CC, 2 = PC
+  rtpMidiNumRed: number;
+  rtpMidiNumFlashRed: number;
+  rtpMidiNumGreen: number;
+  rtpMidiNumYellow: number;
+  rtpMidiNumBlue: number;
+  rtpMidiNumWhite: number;
+  rtpMidiState: {
+    red: boolean;
+    flashRed: boolean;
+    green: boolean;
+    yellow: boolean;
+    blue: boolean;
+    white: boolean;
+  };
+  // OSC (Open Sound Control) Configuration & State
+  oscPort: number;
+  oscPrefix: string;
+  oscCustomMessage: string;
+  oscState: {
+    red: boolean;
+    flashRed: boolean;
+    green: boolean;
+    yellow: boolean;
+    blue: boolean;
+    white: boolean;
+  };
+  // IMU 6-Axis Screen Auto-Rotation
+  imuRotation: 0 | 90 | 180 | 270;
 }
 
 interface AtomSimulatorProps {
@@ -80,6 +118,7 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
   const [isPressing, setIsPressing] = useState(false);
   const [pressStartTime, setPressStartTime] = useState<number | null>(null);
   const [currentTime, setCurrentTime] = useState<string>('10:42:15');
+  const [flashTick, setFlashTick] = useState(false);
 
   // Live clock displaying seconds, updating every second
   useEffect(() => {
@@ -95,56 +134,130 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
     return () => clearInterval(timer);
   }, []);
 
+  // 400ms periodic tick for flashing states (ETC unacknowledged Standby & rtpMIDI/OSC Flash Red)
+  useEffect(() => {
+    const flashInterval = setInterval(() => {
+      setFlashTick(prev => !prev);
+    }, 400);
+    return () => clearInterval(flashInterval);
+  }, []);
+
   const brightnessPercents = [15, 35, 65, 100];
 
-  // Screen background color based on tally mode and operating mode
-  const getScreenBgColor = () => {
-    if (state.flashActive) return 'bg-white text-black';
-    if (state.currentScreen === 1) return 'bg-black text-white';
+  // Helper to resolve the active color & label based on mode and priorities
+  const resolveActiveColor = () => {
+    if (state.flashActive) {
+      return { bg: 'bg-white', text: 'text-black', isDark: false, label: 'FLASH' };
+    }
 
-    // ETC CueSystem mode styling
+    // 1. ETC CueSystem Mode:
+    // Standby = flashing red until acknowledged (solid red)
     if (state.operatingMode === 'ETC_CueSystem') {
-      if (state.cueState === 'standby') return 'bg-amber-500 text-black';
-      if (state.cueState === 'go') return 'bg-emerald-500 text-black';
-      return 'bg-neutral-950 text-white';
+      if (state.cueState === 'standby') {
+        if (!state.cueAckActive) {
+          // Unacknowledged: Flashing Red!
+          return flashTick
+            ? { bg: 'bg-red-600', text: 'text-white', isDark: true, label: 'STANDBY' }
+            : { bg: 'bg-neutral-950', text: 'text-red-500', isDark: true, label: 'STANDBY' };
+        } else {
+          // Acknowledged: Solid Red!
+          return { bg: 'bg-red-600', text: 'text-white', isDark: true, label: 'ACKNOWLEDGED' };
+        }
+      }
+      if (state.cueState === 'go') {
+        return { bg: 'bg-emerald-500', text: 'text-black', isDark: false, label: 'GO!' };
+      }
+      return { bg: 'bg-neutral-950', text: 'text-white', isDark: true, label: 'STANDBY' };
     }
 
-    // NMOS IS-07 mode styling
+    // 2. NMOS IS-07 Mode: Program (Red) > Preview (Green) > Aux (Amber)
     if (state.operatingMode === 'NMOS_IS07') {
-      if (state.nmosOnAir) return 'bg-red-600 text-white';
-      return 'bg-neutral-950 text-white';
+      if (state.nmosOnAir) {
+        return { bg: 'bg-red-600', text: 'text-white', isDark: true, label: 'ON AIR (PRG)' };
+      }
+      if (state.nmosPreview) {
+        return { bg: 'bg-emerald-500', text: 'text-black', isDark: false, label: 'PREVIEW' };
+      }
+      if (state.nmosAux) {
+        return { bg: 'bg-amber-500', text: 'text-black', isDark: false, label: 'AUX' };
+      }
+      return { bg: 'bg-neutral-950', text: 'text-white', isDark: true, label: 'OFF AIR' };
     }
 
-    // Tally Arbiter / TSL modes
+    // 3. rtpMIDI Mode: Red > Flashing Red > Green > Yellow > Blue > White > Off
+    if (state.operatingMode === 'RTP_MIDI') {
+      const s = state.rtpMidiState;
+      if (s.red) {
+        return { bg: 'bg-red-600', text: 'text-white', isDark: true, label: 'RED' };
+      }
+      if (s.flashRed) {
+        return flashTick
+          ? { bg: 'bg-red-600', text: 'text-white', isDark: true, label: 'FLASH RED' }
+          : { bg: 'bg-neutral-950', text: 'text-red-500', isDark: true, label: 'FLASH RED' };
+      }
+      if (s.green) {
+        return { bg: 'bg-emerald-500', text: 'text-black', isDark: false, label: 'GREEN' };
+      }
+      if (s.yellow) {
+        return { bg: 'bg-yellow-400', text: 'text-black', isDark: false, label: 'YELLOW' };
+      }
+      if (s.blue) {
+        return { bg: 'bg-blue-600', text: 'text-white', isDark: true, label: 'BLUE' };
+      }
+      if (s.white) {
+        return { bg: 'bg-white', text: 'text-black', isDark: false, label: 'WHITE' };
+      }
+      return { bg: 'bg-neutral-950', text: 'text-white', isDark: true, label: 'OFF' };
+    }
+
+    // 4. OSC Mode: Red > Flashing Red > Green > Yellow > Blue > White > Off
+    if (state.operatingMode === 'OSC') {
+      const s = state.oscState;
+      if (s.red) {
+        return { bg: 'bg-red-600', text: 'text-white', isDark: true, label: 'RED' };
+      }
+      if (s.flashRed) {
+        return flashTick
+          ? { bg: 'bg-red-600', text: 'text-white', isDark: true, label: 'FLASH RED' }
+          : { bg: 'bg-neutral-950', text: 'text-red-500', isDark: true, label: 'FLASH RED' };
+      }
+      if (s.green) {
+        return { bg: 'bg-emerald-500', text: 'text-black', isDark: false, label: 'GREEN' };
+      }
+      if (s.yellow) {
+        return { bg: 'bg-yellow-400', text: 'text-black', isDark: false, label: 'YELLOW' };
+      }
+      if (s.blue) {
+        return { bg: 'bg-blue-600', text: 'text-white', isDark: true, label: 'BLUE' };
+      }
+      if (s.white) {
+        return { bg: 'bg-white', text: 'text-black', isDark: false, label: 'WHITE' };
+      }
+      return { bg: 'bg-neutral-950', text: 'text-white', isDark: true, label: 'OFF' };
+    }
+
+    // 5. Standard TSL / Tally Arbiter / P2P Modes
     switch (state.tallyState) {
       case 'program':
-        return 'bg-red-600 text-white';
+        return { bg: 'bg-red-600', text: 'text-white', isDark: true, label: 'PROGRAM' };
       case 'preview':
-        return 'bg-emerald-500 text-black';
+        return { bg: 'bg-emerald-500', text: 'text-black', isDark: false, label: 'PREVIEW' };
       case 'aux':
-        return 'bg-amber-500 text-black';
+        return { bg: 'bg-amber-500', text: 'text-black', isDark: false, label: 'AUX' };
       case 'standby':
       default:
-        return 'bg-neutral-950 text-white';
+        return { bg: 'bg-neutral-950', text: 'text-white', isDark: true, label: 'STANDBY' };
     }
   };
 
-  const getStatusLabel = () => {
-    if (state.operatingMode === 'ETC_CueSystem') {
-      if (state.cueState === 'standby') return 'STANDBY';
-      if (state.cueState === 'go') return 'GO!';
-      return 'STANDBY';
-    }
-    if (state.operatingMode === 'NMOS_IS07') {
-      return state.nmosOnAir ? 'ON AIR' : 'OFF AIR';
-    }
-    switch (state.tallyState) {
-      case 'program': return 'PROGRAM';
-      case 'preview': return 'PREVIEW';
-      case 'aux': return 'AUX';
-      default: return 'STANDBY';
-    }
+  const activeColor = resolveActiveColor();
+
+  // Screen background color (Screen 1 Diagnostics ALSO follows tally state background per request #2!)
+  const getScreenBgColor = () => {
+    return `${activeColor.bg} ${activeColor.text}`;
   };
+
+  const getStatusLabel = () => activeColor.label;
 
   // Handle front screen button interactions
   const handleButtonMouseDown = () => {
@@ -218,19 +331,39 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
     ? (state.networkMode === 'ETH' ? '192.168.1.185' : '192.168.1.92') 
     : state.staticIP;
 
+  // Determine displayed name on screen
+  const getDisplayName = () => {
+    if (state.operatingMode === 'OSC' && state.oscCustomMessage.trim().length > 0) {
+      return state.oscCustomMessage.trim();
+    }
+    if (state.operatingMode === 'ETC_CueSystem') {
+      return `CUE CH ${state.cueChannel}`;
+    }
+    if (state.operatingMode === 'RTP_MIDI') {
+      return `MIDI CH ${state.rtpMidiChannel === 0 ? 'OMNI' : state.rtpMidiChannel}`;
+    }
+    if (state.operatingMode === 'NMOS_IS07') {
+      return state.nmosSource.slice(-12).toUpperCase();
+    }
+    return state.deviceName || 'UNASSIGNED';
+  };
+
+  const displayName = getDisplayName();
+  const isTextLong = displayName.length > 9;
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
       {/* Visual Hardware Unit */}
       <div className="lg:col-span-5 flex flex-col items-center">
         <div className="w-full max-w-sm bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-2xl relative overflow-hidden">
-          {/* Subtle glow behind device based on tally */}
+          {/* Subtle glow behind device based on active tally color */}
           <div 
-            className={`absolute -top-12 -left-12 w-48 h-48 rounded-full blur-3xl opacity-30 pointer-events-none transition-colors duration-500 ${
-              state.operatingMode === 'ETC_CueSystem' ? (state.cueState === 'go' ? 'bg-emerald-500' : state.cueState === 'standby' ? 'bg-amber-500' : 'bg-blue-500') :
-              state.operatingMode === 'NMOS_IS07' ? (state.nmosOnAir ? 'bg-red-500' : 'bg-cyan-500') :
-              state.tallyState === 'program' ? 'bg-red-500' :
-              state.tallyState === 'preview' ? 'bg-emerald-500' :
-              state.tallyState === 'aux' ? 'bg-amber-500' : 'bg-blue-500'
+            className={`absolute -top-12 -left-12 w-48 h-48 rounded-full blur-3xl opacity-35 pointer-events-none transition-colors duration-500 ${
+              activeColor.bg === 'bg-red-600' ? 'bg-red-500' :
+              activeColor.bg === 'bg-emerald-500' ? 'bg-emerald-500' :
+              activeColor.bg === 'bg-yellow-400' || activeColor.bg === 'bg-amber-500' ? 'bg-yellow-500' :
+              activeColor.bg === 'bg-blue-600' ? 'bg-blue-500' :
+              activeColor.bg === 'bg-white' ? 'bg-neutral-200' : 'bg-neutral-800'
             }`}
           />
 
@@ -239,14 +372,25 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
               <span className="text-xs font-mono font-medium text-neutral-300">M5AtomS3R + AtomPoE</span>
             </div>
-            <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-neutral-800 text-neutral-400 border border-neutral-700">
-              128×128 GC9107
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-neutral-800 text-cyan-400 border border-neutral-700 flex items-center gap-1">
+                <Compass className="w-3 h-3" />
+                <span>IMU: {state.imuRotation}°</span>
+              </span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-neutral-800 text-neutral-400 border border-neutral-700">
+                128×128
+              </span>
+            </div>
           </div>
 
-          {/* Physical AtomS3R Body */}
-          <div className="flex flex-col items-center my-2">
-            <div className="relative group">
+          {/* Physical AtomS3R Body with IMU Tilt Simulation */}
+          <div className="flex flex-col items-center my-3">
+            <div 
+              className="relative transition-transform duration-300 ease-out select-none"
+              style={{
+                transform: `rotate(${state.imuRotation}deg)`
+              }}
+            >
               {/* Outer Atom Enclosure (Dark Textured Slate) */}
               <div 
                 className="w-56 h-56 rounded-2xl bg-neutral-800 border-4 border-neutral-700 shadow-2xl p-3 flex flex-col items-center justify-center relative select-none"
@@ -283,14 +427,21 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                         </div>
                       </div>
 
-                      {/* Main Device Name / Channel directly below clock */}
-                      <div className="text-center py-0.5 my-auto">
-                        <div className="text-sm font-black tracking-wider uppercase leading-tight truncate px-1 drop-shadow-sm">
-                          {state.operatingMode === 'ETC_CueSystem' 
-                            ? `CUE CH ${state.cueChannel}` 
-                            : (state.deviceName || 'UNASSIGNED')}
-                        </div>
-                        <div className="inline-block mt-0.5 px-2.5 py-0.5 rounded text-[9.5px] font-bold uppercase tracking-wider border border-current/40 bg-current/15 shadow-sm">
+                      {/* Main Device Name / OSC Message / Channel directly below clock */}
+                      <div className="text-center py-0.5 my-auto w-full overflow-hidden">
+                        {isTextLong ? (
+                          // Ticker horizontal scroll animation for long text
+                          <div className="w-full overflow-hidden whitespace-nowrap py-0.5">
+                            <div className="inline-block animate-marquee font-black text-sm uppercase tracking-wider drop-shadow-sm px-1">
+                              {displayName} &nbsp; &bull; &nbsp; {displayName}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-sm font-black tracking-wider uppercase leading-tight truncate px-1 drop-shadow-sm">
+                            {displayName}
+                          </div>
+                        )}
+                        <div className="inline-block mt-0.5 px-2.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border border-current/40 bg-current/15 shadow-sm">
                           {getStatusLabel()}
                         </div>
                         {state.operatingMode === 'ETC_CueSystem' && state.cueAckActive && (
@@ -310,12 +461,18 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                             {state.operatingMode === 'Presenter_P2P' && '[P2P PRES]'}
                             {state.operatingMode === 'ETC_CueSystem' && '[ETC CUE]'}
                             {state.operatingMode === 'NMOS_IS07' && '[NMOS-07]'}
+                            {state.operatingMode === 'RTP_MIDI' && '[rtpMIDI]'}
+                            {state.operatingMode === 'OSC' && '[OSC UDP]'}
                           </span>
                           <span className="opacity-90 font-normal">
                             {state.operatingMode === 'ETC_CueSystem'
                               ? `CH ${state.cueChannel}`
                               : state.operatingMode === 'NMOS_IS07'
                               ? `Port ${state.nmosPort}`
+                              : state.operatingMode === 'RTP_MIDI'
+                              ? `Port ${state.rtpMidiPort}`
+                              : state.operatingMode === 'OSC'
+                              ? `Port ${state.oscPort}`
                               : state.operatingMode.includes('P2P')
                               ? `Grp: ${state.pairingGroup.slice(0, 6)}`
                               : (state.networkMode === 'ETH' ? 'TA: ONLINE' : 'TA: OFFLINE')}
@@ -327,7 +484,11 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                             {state.operatingMode === 'ETC_CueSystem'
                               ? 'Stage Ack:'
                               : state.operatingMode === 'NMOS_IS07'
-                              ? 'IS-07 State:'
+                              ? 'IS-07 Bus:'
+                              : state.operatingMode === 'RTP_MIDI'
+                              ? 'MIDI Trig:'
+                              : state.operatingMode === 'OSC'
+                              ? 'OSC Prefix:'
                               : (state.operatingMode === 'Presenter' || state.operatingMode === 'Presenter_P2P')
                               ? 'Cue(PVW):'
                               : 'Return(PRG):'}
@@ -336,7 +497,7 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                             state.operatingMode === 'ETC_CueSystem'
                               ? (state.cueAckActive ? 'bg-emerald-950 text-emerald-300 border border-emerald-500' : 'opacity-70')
                               : state.operatingMode === 'NMOS_IS07'
-                              ? (state.nmosOnAir ? 'bg-red-950 text-red-200 border border-red-500' : 'opacity-70')
+                              ? (state.nmosOnAir ? 'bg-red-950 text-red-200 border border-red-500' : state.nmosPreview ? 'bg-emerald-950 text-emerald-200 border border-emerald-500' : 'opacity-70')
                               : (state.isCueActive 
                                   ? (state.operatingMode === 'Presenter' || state.operatingMode === 'Presenter_P2P'
                                       ? 'bg-emerald-950 text-emerald-300 border border-emerald-500' 
@@ -346,7 +507,11 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                             {state.operatingMode === 'ETC_CueSystem'
                               ? (state.cueAckActive ? '● ACKED' : 'READY')
                               : state.operatingMode === 'NMOS_IS07'
-                              ? (state.nmosOnAir ? '● ON AIR' : 'OFF')
+                              ? (state.nmosOnAir ? '● PRG' : state.nmosPreview ? '● PVW' : state.nmosAux ? '● AUX' : 'OFF')
+                              : state.operatingMode === 'RTP_MIDI'
+                              ? (state.rtpMidiTriggerType === 0 ? 'NOTE ON' : state.rtpMidiTriggerType === 1 ? 'CC TRIG' : 'PC TRIG')
+                              : state.operatingMode === 'OSC'
+                              ? state.oscPrefix
                               : (state.isCueActive ? '● ACTIVE' : 'OFF')}
                           </span>
                         </div>
@@ -364,53 +529,66 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                       </div>
                     </div>
                   ) : (
-                    // Screen 1: Network & Diagnostics
+                    // Screen 1: Network & Diagnostics (Follows Tally State Background per user request #2!)
                     <div className="w-full h-full p-2 text-left font-mono text-[9px] leading-tight flex flex-col justify-between">
                       <div>
-                        <div className="text-cyan-400 font-bold border-b border-neutral-700 pb-0.5 text-[9px]">
-                          ATOM S3R DIAGNOSTICS
+                        {/* High-contrast header banner */}
+                        <div className={`font-black border-b pb-0.5 text-[9px] flex items-center justify-between ${
+                          activeColor.isDark ? 'text-cyan-300 border-white/30' : 'text-neutral-900 border-black/30'
+                        }`}>
+                          <span>ATOM S3R DIAG</span>
+                          <span className="text-[7.5px] px-1 py-0.2 rounded bg-black/40 text-white font-mono">
+                            {getStatusLabel()}
+                          </span>
                         </div>
-                        <div className="mt-1 space-y-0.5 text-neutral-300 text-[8px]">
-                          <div>Mode: <span className="text-amber-400 font-bold">{state.operatingMode}</span></div>
-                          <div>IP Mode: <span className="text-cyan-300 font-bold">{state.useDHCP ? 'DHCP (Auto)' : 'Static (Manual)'}</span></div>
-                          <div>IP: <span className="text-white">{displayedIP}</span></div>
-                          {!state.useDHCP && (
-                            <>
-                              <div>Mask: <span className="text-neutral-400">{state.staticMask}</span></div>
-                              <div>GW:   <span className="text-neutral-400">{state.staticGW}</span></div>
-                            </>
-                          )}
+
+                        <div className={`mt-1 space-y-0.5 text-[8px] font-medium ${
+                          activeColor.isDark ? 'text-neutral-100' : 'text-neutral-900 font-semibold'
+                        }`}>
+                          <div>Mode: <span className="font-bold underline">{state.operatingMode}</span></div>
+                          <div>IP: <span className="font-bold">{displayedIP}</span> ({state.useDHCP ? 'DHCP' : 'Static'})</div>
+                          <div>IMU Rot: <span className="font-bold">{state.imuRotation}°</span></div>
+
                           {state.operatingMode === 'ETC_CueSystem' ? (
                             <>
-                              <div>Cue Hub: <span className="text-amber-300">{state.cueHost}:{state.cuePort}</span></div>
-                              <div>Channel: <span className="text-emerald-400 font-bold">{state.cueChannel}</span></div>
-                              <div>Ack:     <span className={state.cueAckActive ? 'text-emerald-400 font-bold' : 'text-neutral-500'}>
-                                {state.cueAckActive ? 'ACKNOWLEDGED' : 'IDLE'}
-                              </span></div>
+                              <div>Cue Hub: <span>{state.cueHost}:{state.cuePort}</span></div>
+                              <div>Ch: <span>{state.cueChannel}</span> | State: <span>{state.cueState.toUpperCase()}</span></div>
+                              <div>Ack: <span>{state.cueAckActive ? 'ACKNOWLEDGED' : 'WAITING ACK'}</span></div>
                             </>
                           ) : state.operatingMode === 'NMOS_IS07' ? (
                             <>
-                              <div>Registry: <span className="text-cyan-300">{state.nmosHost}:{state.nmosPort}</span></div>
-                              <div>Topic:    <span className="text-white truncate">{state.nmosTopic}</span></div>
-                              <div>Tally:    <span className={state.nmosOnAir ? 'text-red-400 font-bold' : 'text-neutral-500'}>
-                                {state.nmosOnAir ? 'LIVE ON AIR' : 'OFF'}
-                              </span></div>
+                              <div>Registry: <span>{state.nmosHost}:{state.nmosPort}</span></div>
+                              <div>PRG: <span>{state.nmosOnAir ? 'ON' : 'off'}</span> | PVW: <span>{state.nmosPreview ? 'ON' : 'off'}</span></div>
+                              <div>AUX: <span>{state.nmosAux ? 'ON' : 'off'}</span></div>
+                            </>
+                          ) : state.operatingMode === 'RTP_MIDI' ? (
+                            <>
+                              <div>rtpMIDI: <span>Port {state.rtpMidiPort}</span></div>
+                              <div>Ch: <span>{state.rtpMidiChannel === 0 ? 'OMNI' : state.rtpMidiChannel}</span> | Trig: <span>{state.rtpMidiTriggerType === 0 ? 'Note' : state.rtpMidiTriggerType === 1 ? 'CC' : 'PC'}</span></div>
+                              <div>State: <span>{getStatusLabel()}</span></div>
+                            </>
+                          ) : state.operatingMode === 'OSC' ? (
+                            <>
+                              <div>OSC Port: <span>{state.oscPort}</span></div>
+                              <div>Prefix: <span>{state.oscPrefix}</span></div>
+                              <div>Msg: <span className="truncate">{state.oscCustomMessage || 'None'}</span></div>
                             </>
                           ) : (
                             <>
-                              <div>Grp:  <span className="text-white">{state.pairingGroup}</span></div>
-                              <div>TSL:  <span className="text-emerald-400">{state.tslPort} ({state.operatingMode.includes('Presenter') ? 'PVW' : 'PRG'})</span></div>
-                              <div>TA:   <span className={state.operatingMode.includes('P2P') ? 'text-neutral-500' : 'text-emerald-400'}>
-                                {state.operatingMode.includes('P2P') ? 'Disabled (P2P)' : 'Connected'}
-                              </span></div>
+                              <div>Grp: <span>{state.pairingGroup}</span></div>
+                              <div>TSL Port: <span>{state.tslPort}</span></div>
+                              <div>TA: <span>{state.operatingMode.includes('P2P') ? 'P2P Direct' : 'Connected'}</span></div>
                             </>
                           )}
-                          <div>D-Buffer: <span className="text-emerald-400">32KB (OK)</span></div>
+                          <div>D-Buffer: <span>32KB M5Canvas (OK)</span></div>
                         </div>
                       </div>
-                      <div className="border-t border-neutral-800 pt-0.5 text-neutral-400 flex justify-between text-[8px]">
+
+                      <div className={`border-t pt-0.5 flex justify-between text-[8px] ${
+                        activeColor.isDark ? 'border-white/20 text-neutral-300' : 'border-black/20 text-neutral-800'
+                      }`}>
                         <span>Bright: {brightnessPercents[state.brightnessLevel]}%</span>
-                        <span className="text-cyan-400">Double-Click ↻</span>
+                        <span className="font-bold">Double-Click ↻</span>
                       </div>
                     </div>
                   )}
@@ -451,17 +629,44 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
             </div>
           </div>
 
+          {/* IMU Orientation Test Controller */}
+          <div className="mt-2 bg-neutral-950 rounded-xl p-3 border border-neutral-800 text-xs font-mono">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-neutral-300 font-semibold flex items-center gap-1.5">
+                <RotateCw className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Simulate IMU 6-Axis Tilt:</span>
+              </span>
+              <span className="text-cyan-400 font-bold">{state.imuRotation}°</span>
+            </div>
+            <div className="grid grid-cols-4 gap-1.5">
+              {([0, 90, 180, 270] as const).map(deg => (
+                <button
+                  key={deg}
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, imuRotation: deg }))}
+                  className={`py-1 px-1.5 rounded text-[10px] font-mono font-bold border transition-colors cursor-pointer ${
+                    state.imuRotation === deg
+                      ? 'bg-cyan-950 text-cyan-300 border-cyan-500'
+                      : 'bg-neutral-900 text-neutral-400 border-neutral-700 hover:border-neutral-600'
+                  }`}
+                >
+                  {deg === 0 ? '0° (Up)' : deg === 90 ? '90° (R)' : deg === 180 ? '180° (Inv)' : '270° (L)'}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Quick Hardware Action Tips */}
-          <div className="mt-4 bg-neutral-950/60 rounded-xl p-3 border border-neutral-800 text-xs font-mono text-neutral-400 space-y-1">
+          <div className="mt-3 bg-neutral-950/60 rounded-xl p-3 border border-neutral-800 text-xs font-mono text-neutral-400 space-y-1">
             <div className="text-neutral-300 font-semibold mb-1 flex items-center gap-1.5">
               <Info className="w-3.5 h-3.5 text-blue-400" />
-              <span>Simulated Screen Button Gestures:</span>
+              <span>Screen Gestures:</span>
             </div>
             <div className="flex justify-between">
               <span>• Single Click:</span>
               <span className="text-white">
                 {state.operatingMode === 'ETC_CueSystem' ? 'Send Performer ACK' :
-                 state.operatingMode === 'NMOS_IS07' ? 'Toggle IS-07 Tally' : 'Toggle Cue Ch1'}
+                 state.operatingMode === 'NMOS_IS07' ? 'Toggle IS-07 PRG' : 'Toggle Cue Ch1'}
               </span>
             </div>
             <div className="flex justify-between">
@@ -470,7 +675,7 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
             </div>
             <div className="flex justify-between">
               <span>• Long Hold (&gt;1.2s):</span>
-              <span className="text-white">Step Brightness ({brightnessPercents[state.brightnessLevel]}%)</span>
+              <span className="text-white">Brightness ({brightnessPercents[state.brightnessLevel]}%)</span>
             </div>
           </div>
         </div>
@@ -490,117 +695,119 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 mb-4">
             <button
               type="button"
               onClick={() => setState(prev => ({ ...prev, operatingMode: 'TP', presenterCueActive: false }))}
-              className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+              className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                 state.operatingMode === 'TP'
-                  ? 'bg-blue-950/60 text-white border-blue-500 shadow-lg shadow-blue-950/50'
+                  ? 'bg-blue-950/60 text-white border-blue-500 shadow-md shadow-blue-950/50'
                   : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-neutral-700'
               }`}
             >
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-xs font-mono text-blue-400">TP (Tally Arbiter)</span>
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-900/50 text-blue-300">0x32 Red</span>
-              </div>
-              <p className="text-[11px] text-neutral-400 mt-1">
-                Technical Producer mode with TA server. Sends TSL Program.
-              </p>
+              <div className="font-bold text-xs font-mono text-blue-400">TP (TA)</div>
+              <p className="text-[10.5px] text-neutral-400 mt-0.5">Tally Arbiter Program return</p>
             </button>
 
             <button
               type="button"
               onClick={() => setState(prev => ({ ...prev, operatingMode: 'Presenter', presenterCueActive: false }))}
-              className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+              className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                 state.operatingMode === 'Presenter'
-                  ? 'bg-emerald-950/60 text-white border-emerald-500 shadow-lg shadow-emerald-950/50'
+                  ? 'bg-emerald-950/60 text-white border-emerald-500 shadow-md shadow-emerald-950/50'
                   : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-neutral-700'
               }`}
             >
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-xs font-mono text-emerald-400">Presenter (TA)</span>
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-900/50 text-emerald-300">0x31 Green</span>
-              </div>
-              <p className="text-[11px] text-neutral-400 mt-1">
-                Presenter mode with TA server. Sends TSL Preview return cue.
-              </p>
+              <div className="font-bold text-xs font-mono text-emerald-400">Presenter (TA)</div>
+              <p className="text-[10.5px] text-neutral-400 mt-0.5">Tally Arbiter Preview cue</p>
             </button>
 
             <button
               type="button"
               onClick={() => setState(prev => ({ ...prev, operatingMode: 'TP_P2P' }))}
-              className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+              className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                 state.operatingMode === 'TP_P2P'
-                  ? 'bg-purple-950/60 text-white border-purple-500 shadow-lg shadow-purple-950/50'
+                  ? 'bg-purple-950/60 text-white border-purple-500 shadow-md shadow-purple-950/50'
                   : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-neutral-700'
               }`}
             >
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-xs font-mono text-purple-400">TP Standalone (P2P)</span>
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-purple-900/50 text-purple-300">P2P Master</span>
-              </div>
-              <p className="text-[11px] text-neutral-400 mt-1">
-                Zero-server master. Pairs directly with Presenter via mDNS.
-              </p>
+              <div className="font-bold text-xs font-mono text-purple-400">P2P TP Master</div>
+              <p className="text-[10.5px] text-neutral-400 mt-0.5">Zero-server standalone</p>
             </button>
 
             <button
               type="button"
               onClick={() => setState(prev => ({ ...prev, operatingMode: 'Presenter_P2P' }))}
-              className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+              className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                 state.operatingMode === 'Presenter_P2P'
-                  ? 'bg-amber-950/60 text-white border-amber-500 shadow-lg shadow-amber-950/50'
+                  ? 'bg-amber-950/60 text-white border-amber-500 shadow-md shadow-amber-950/50'
                   : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-neutral-700'
               }`}
             >
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-xs font-mono text-amber-400">Presenter no TA</span>
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-900/50 text-amber-300">P2P Slave</span>
-              </div>
-              <p className="text-[11px] text-neutral-400 mt-1">
-                Zero-server slave. Directly receives tally and cues TP.
-              </p>
+              <div className="font-bold text-xs font-mono text-amber-400">P2P Presenter</div>
+              <p className="text-[10.5px] text-neutral-400 mt-0.5">Zero-server slave</p>
             </button>
 
             <button
               type="button"
               onClick={() => setState(prev => ({ ...prev, operatingMode: 'ETC_CueSystem' }))}
-              className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+              className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                 state.operatingMode === 'ETC_CueSystem'
-                  ? 'bg-red-950/60 text-white border-red-500 shadow-lg shadow-red-950/50'
+                  ? 'bg-red-950/60 text-white border-red-500 shadow-md shadow-red-950/50'
                   : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-neutral-700'
               }`}
             >
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-xs font-mono text-red-400">ETC CueSystem</span>
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-red-900/50 text-red-300">Stage Cue</span>
-              </div>
-              <p className="text-[11px] text-neutral-400 mt-1">
-                Theatre & opera stage cue outstation. Standby, Go, & Performer ACK.
-              </p>
+              <div className="font-bold text-xs font-mono text-red-400">ETC CueSystem</div>
+              <p className="text-[10.5px] text-neutral-400 mt-0.5">Flash Standby &amp; Solid Ack</p>
             </button>
 
             <button
               type="button"
               onClick={() => setState(prev => ({ ...prev, operatingMode: 'NMOS_IS07' }))}
-              className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+              className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                 state.operatingMode === 'NMOS_IS07'
-                  ? 'bg-cyan-950/60 text-white border-cyan-500 shadow-lg shadow-cyan-950/50'
+                  ? 'bg-cyan-950/60 text-white border-cyan-500 shadow-md shadow-cyan-950/50'
                   : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-neutral-700'
               }`}
             >
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-xs font-mono text-cyan-400">NMOS IS-07</span>
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-900/50 text-cyan-300">ST 2110</span>
+              <div className="font-bold text-xs font-mono text-cyan-400">NMOS IS-07</div>
+              <p className="text-[10.5px] text-neutral-400 mt-0.5">PRG, PVW &amp; AUX Endpoints</p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setState(prev => ({ ...prev, operatingMode: 'RTP_MIDI' }))}
+              className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                state.operatingMode === 'RTP_MIDI'
+                  ? 'bg-indigo-950/60 text-white border-indigo-500 shadow-md shadow-indigo-950/50'
+                  : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-neutral-700'
+              }`}
+            >
+              <div className="font-bold text-xs font-mono text-indigo-400 flex items-center gap-1">
+                <Music className="w-3.5 h-3.5" />
+                <span>rtpMIDI</span>
               </div>
-              <p className="text-[11px] text-neutral-400 mt-1">
-                AMWA NMOS open IP broadcast tally with IS-04 registry.
-              </p>
+              <p className="text-[10.5px] text-neutral-400 mt-0.5">6 Colors with Priority</p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setState(prev => ({ ...prev, operatingMode: 'OSC' }))}
+              className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                state.operatingMode === 'OSC'
+                  ? 'bg-teal-950/60 text-white border-teal-500 shadow-md shadow-teal-950/50'
+                  : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-neutral-700'
+              }`}
+            >
+              <div className="font-bold text-xs font-mono text-teal-400 flex items-center gap-1">
+                <Volume2 className="w-3.5 h-3.5" />
+                <span>OSC Mode</span>
+              </div>
+              <p className="text-[10.5px] text-neutral-400 mt-0.5">Scrolling Text Ticker</p>
             </button>
           </div>
 
-          {/* Mode-Specific Interaction Testing */}
+          {/* Mode-Specific Interactive Controls */}
           {state.operatingMode === 'ETC_CueSystem' ? (
             <div className="p-4 bg-neutral-950 rounded-xl border border-red-900/40 space-y-3">
               <div className="flex items-center justify-between">
@@ -611,19 +818,30 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                 <span className="text-[11px] font-mono text-neutral-400">Channel: {state.cueChannel}</span>
               </div>
               <p className="text-xs text-neutral-400">
-                Simulate cue light triggers sent from the stage manager console over UDP:
+                <strong>New Feature:</strong> Standby flashes red until performer clicks screen or hub receives ACK to turn solid red.
               </p>
               <div className="flex flex-wrap gap-2.5">
                 <button
                   type="button"
                   onClick={() => setState(prev => ({ ...prev, cueState: 'standby', cueAckActive: false }))}
                   className={`px-3 py-2 rounded-lg text-xs font-mono font-semibold border transition-all cursor-pointer ${
-                    state.cueState === 'standby'
-                      ? 'bg-amber-600 text-black border-amber-400 font-bold'
-                      : 'bg-neutral-800 text-amber-300 border-neutral-700 hover:border-amber-500'
+                    state.cueState === 'standby' && !state.cueAckActive
+                      ? 'bg-red-600 text-white border-red-400 font-bold animate-pulse'
+                      : 'bg-neutral-800 text-red-300 border-neutral-700 hover:border-red-500'
                   }`}
                 >
-                  Simulate STANDBY (Amber CS,{state.cueChannel},STANDBY)
+                  Trigger STANDBY (Flashing Red)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, cueAckActive: true }))}
+                  className={`px-3 py-2 rounded-lg text-xs font-mono font-semibold border transition-all cursor-pointer ${
+                    state.cueAckActive
+                      ? 'bg-red-600 text-white border-red-400 font-bold'
+                      : 'bg-neutral-800 text-neutral-300 border-neutral-700 hover:border-red-500'
+                  }`}
+                >
+                  Performer ACK (Solid Red)
                 </button>
                 <button
                   type="button"
@@ -634,7 +852,7 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                       : 'bg-neutral-800 text-emerald-300 border-neutral-700 hover:border-emerald-500'
                   }`}
                 >
-                  Simulate GO! (Green CS,{state.cueChannel},GO)
+                  Trigger GO! (Green)
                 </button>
                 <button
                   type="button"
@@ -643,17 +861,6 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                 >
                   Clear / OFF
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setState(prev => ({ ...prev, cueAckActive: !prev.cueAckActive }))}
-                  className={`px-3 py-2 rounded-lg text-xs font-mono font-semibold border transition-all cursor-pointer ${
-                    state.cueAckActive
-                      ? 'bg-emerald-950 text-emerald-300 border-emerald-500'
-                      : 'bg-neutral-800 text-neutral-300 border-neutral-700'
-                  }`}
-                >
-                  Performer ACK Return: {state.cueAckActive ? '● ACKED (CS,1,ACK)' : 'Send ACK'}
-                </button>
               </div>
             </div>
           ) : state.operatingMode === 'NMOS_IS07' ? (
@@ -661,26 +868,170 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
                   <Tv className="w-4 h-4" />
-                  <span>NMOS IS-07 Event & Tally (SMPTE ST 2110)</span>
+                  <span>NMOS IS-07 Event &amp; Tally Endpoints (SMPTE ST 2110)</span>
                 </span>
                 <span className="text-[11px] font-mono text-neutral-400">Registry: {state.nmosHost}:{state.nmosPort}</span>
               </div>
               <p className="text-xs text-neutral-400">
-                Simulate state events emitted to the IS-04 registry topic <code className="text-cyan-300">{state.nmosTopic}</code>:
+                <strong>New Feature:</strong> Independent endpoints for <strong>Program</strong> (Red), <strong>Preview</strong> (Green), and <strong>Aux</strong> (Amber) with priority:
               </p>
-              <div className="flex flex-wrap gap-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                 <button
                   type="button"
                   onClick={() => setState(prev => ({ ...prev, nmosOnAir: !prev.nmosOnAir }))}
-                  className={`px-4 py-2 rounded-lg text-xs font-mono font-semibold flex items-center gap-2 border transition-all cursor-pointer ${
+                  className={`p-2.5 rounded-lg text-xs font-mono font-semibold border transition-all cursor-pointer ${
                     state.nmosOnAir
-                      ? 'bg-red-600 text-white border-red-400 font-bold shadow-lg shadow-red-900/50'
-                      : 'bg-neutral-800 text-neutral-300 border-neutral-700 hover:border-cyan-500'
+                      ? 'bg-red-600 text-white border-red-400 font-bold'
+                      : 'bg-neutral-800 text-neutral-300 border-neutral-700 hover:border-red-500'
                   }`}
                 >
-                  <span className={`w-2 h-2 rounded-full ${state.nmosOnAir ? 'bg-white animate-pulse' : 'bg-red-400'}`} />
-                  <span>{state.nmosOnAir ? 'IS-07 Live: ON AIR (value: true)' : 'Toggle Live (value: true)'}</span>
+                  <div className="font-bold text-red-400">Program Endpoint</div>
+                  <div className="text-[10px] text-neutral-400 mt-0.5">{state.nmosProgramTopic}</div>
+                  <div className="mt-1 font-bold">{state.nmosOnAir ? '● ACTIVE (Red)' : 'Inactive'}</div>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, nmosPreview: !prev.nmosPreview }))}
+                  className={`p-2.5 rounded-lg text-xs font-mono font-semibold border transition-all cursor-pointer ${
+                    state.nmosPreview
+                      ? 'bg-emerald-600 text-black border-emerald-400 font-bold'
+                      : 'bg-neutral-800 text-neutral-300 border-neutral-700 hover:border-emerald-500'
+                  }`}
+                >
+                  <div className="font-bold text-emerald-400">Preview Endpoint</div>
+                  <div className="text-[10px] text-neutral-400 mt-0.5">{state.nmosPreviewTopic}</div>
+                  <div className="mt-1 font-bold">{state.nmosPreview ? '● ACTIVE (Green)' : 'Inactive'}</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, nmosAux: !prev.nmosAux }))}
+                  className={`p-2.5 rounded-lg text-xs font-mono font-semibold border transition-all cursor-pointer ${
+                    state.nmosAux
+                      ? 'bg-amber-600 text-black border-amber-400 font-bold'
+                      : 'bg-neutral-800 text-neutral-300 border-neutral-700 hover:border-amber-500'
+                  }`}
+                >
+                  <div className="font-bold text-amber-400">Aux Endpoint</div>
+                  <div className="text-[10px] text-neutral-400 mt-0.5">{state.nmosAuxTopic}</div>
+                  <div className="mt-1 font-bold">{state.nmosAux ? '● ACTIVE (Amber)' : 'Inactive'}</div>
+                </button>
+              </div>
+            </div>
+          ) : state.operatingMode === 'RTP_MIDI' ? (
+            <div className="p-4 bg-neutral-950 rounded-xl border border-indigo-900/40 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <Music className="w-4 h-4" />
+                  <span>rtpMIDI / AppleMIDI Trigger Engine (UDP Port {state.rtpMidiPort})</span>
+                </span>
+                <span className="text-[11px] font-mono text-neutral-400">
+                  Channel: {state.rtpMidiChannel === 0 ? 'Omni' : state.rtpMidiChannel} | {state.rtpMidiTriggerType === 0 ? 'Note On/Off' : state.rtpMidiTriggerType === 1 ? 'CC' : 'PC'}
+                </span>
+              </div>
+              <p className="text-xs text-neutral-400">
+                Strict Priority Evaluation: <strong>Red &gt; Flashing Red &gt; Green &gt; Yellow &gt; Blue &gt; White</strong>
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
+                {(['red', 'flashRed', 'green', 'yellow', 'blue', 'white'] as const).map((colorKey, idx) => {
+                  const isActive = state.rtpMidiState[colorKey];
+                  const labels = ['Red (P1)', 'Flash Red (P2)', 'Green (P3)', 'Yellow (P4)', 'Blue (P5)', 'White (P6)'];
+                  return (
+                    <button
+                      key={colorKey}
+                      type="button"
+                      onClick={() => setState(prev => ({
+                        ...prev,
+                        rtpMidiState: {
+                          ...prev.rtpMidiState,
+                          [colorKey]: !isActive
+                        }
+                      }))}
+                      className={`p-2 rounded-lg text-xs font-mono font-semibold border transition-all cursor-pointer text-center ${
+                        isActive
+                          ? 'bg-neutral-800 text-white border-current ring-1 ring-white/50 font-bold'
+                          : 'bg-neutral-900 text-neutral-400 border-neutral-700 hover:border-neutral-500'
+                      }`}
+                    >
+                      <div className="text-[10px]">{labels[idx]}</div>
+                      <div className="text-xs font-bold mt-1">
+                        {isActive ? '● ON' : 'OFF'}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : state.operatingMode === 'OSC' ? (
+            <div className="p-4 bg-neutral-950 rounded-xl border border-teal-900/40 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-teal-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <Volume2 className="w-4 h-4" />
+                  <span>OSC (Open Sound Control) UDP Port {state.oscPort}</span>
+                </span>
+                <span className="text-[11px] font-mono text-neutral-400">Prefix: {state.oscPrefix}</span>
+              </div>
+
+              {/* Custom Message / Text Ticker Input */}
+              <div>
+                <label className="block text-[11px] font-mono text-teal-300 font-semibold mb-1 flex items-center gap-1.5">
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span>Display Message / Text Ticker (Replaces Tally Arbiter Name):</span>
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={state.oscCustomMessage}
+                    onChange={(e) => setState(prev => ({ ...prev, oscCustomMessage: e.target.value }))}
+                    placeholder="e.g. RECORDING - STUDIO 1 (Scrolls if > 9 characters)"
+                    className="flex-1 bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-teal-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setState(prev => ({ ...prev, oscCustomMessage: 'QUIET ON SET - RECORDING' }))}
+                    className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded text-[11px] font-mono border border-neutral-700 cursor-pointer"
+                  >
+                    Preset Long
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setState(prev => ({ ...prev, oscCustomMessage: '' }))}
+                    className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded text-[11px] font-mono border border-neutral-700 cursor-pointer"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 pt-2 border-t border-neutral-800">
+                {(['red', 'flashRed', 'green', 'yellow', 'blue', 'white'] as const).map((colorKey, idx) => {
+                  const isActive = state.oscState[colorKey];
+                  const labels = ['/red (P1)', '/flashred (P2)', '/green (P3)', '/yellow (P4)', '/blue (P5)', '/white (P6)'];
+                  return (
+                    <button
+                      key={colorKey}
+                      type="button"
+                      onClick={() => setState(prev => ({
+                        ...prev,
+                        oscState: {
+                          ...prev.oscState,
+                          [colorKey]: !isActive
+                        }
+                      }))}
+                      className={`p-2 rounded-lg text-xs font-mono font-semibold border transition-all cursor-pointer text-center ${
+                        isActive
+                          ? 'bg-neutral-800 text-white border-teal-400 ring-1 ring-teal-400/50 font-bold'
+                          : 'bg-neutral-900 text-neutral-400 border-neutral-700 hover:border-neutral-500'
+                      }`}
+                    >
+                      <div className="text-[10px]">{labels[idx]}</div>
+                      <div className="text-xs font-bold mt-1">
+                        {isActive ? '● ON' : 'OFF'}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           ) : (
@@ -863,7 +1214,7 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
               <button
                 type="button"
                 onClick={triggerFlash}
-                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-white rounded-lg text-xs font-mono font-semibold flex items-center gap-2 border border-neutral-700"
+                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-white rounded-lg text-xs font-mono font-semibold flex items-center gap-2 border border-neutral-700 cursor-pointer"
               >
                 <Zap className="w-3.5 h-3.5 text-yellow-400" />
                 <span>Test Tally Flash (Strobe)</span>
@@ -873,7 +1224,7 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                 <button
                   type="button"
                   onClick={() => setState(prev => ({ ...prev, presenterCueActive: !prev.presenterCueActive }))}
-                  className={`px-4 py-2 rounded-lg text-xs font-mono font-semibold flex items-center gap-2 border transition-all ${
+                  className={`px-4 py-2 rounded-lg text-xs font-mono font-semibold flex items-center gap-2 border transition-all cursor-pointer ${
                     state.presenterCueActive
                       ? 'bg-red-600 text-yellow-300 border-yellow-400 animate-pulse'
                       : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border-neutral-700'

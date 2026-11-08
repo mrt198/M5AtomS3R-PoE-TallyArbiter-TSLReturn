@@ -129,8 +129,10 @@ bool LAST_MSG                 = false;
 // - "Presenter": Presenter with Tally Arbiter (button sends TSL Preview)
 // - "Presenter_P2P": Presenter no Tally Arbiter (P2P direct to paired TP)
 // - "TP_P2P": TP no Tally Arbiter (P2P direct to paired Presenter)
-// - "ETC_CueSystem": ETC CueSystem Outstation (Theatrical Cue Light with Acknowledge)
-// - "NMOS_IS07": NMOS IS-07 Event & Tally (SMPTE ST 2110 IP Broadcast)
+// - "ETC_CueSystem": ETC CueSystem Outstation (Theatrical Cue Light with Flashing Standby & Ack)
+// - "NMOS_IS07": NMOS IS-07 Event & Tally with Program, Preview & Aux endpoints
+// - "RTP_MIDI": rtpMIDI / AppleMIDI Outstation (Red > Flash Red > Green > Yellow > Blue > White)
+// - "OSC": Open Sound Control Outstation with scrolling text ticker support
 String operatingMode    = "TP";           // Default mode
 String pairingGroup     = "Studio-1";     // mDNS / DNS-SD pairing group
 String pairedTargetIP   = "";             // Target IP of paired unit in P2P mode
@@ -138,17 +140,58 @@ String pairedTargetName = "";             // Target device name in P2P mode
 bool presenterCueActive = false;          // Active on TP unit when Presenter cues
 
 // ETC CueSystem Settings
-String cuesystem_host       = "192.168.1.100"; // CueSystem Hub / Controller IP
-int    cuesystem_port       = 4000;            // CueSystem UDP Port (default 4000)
-int    cuesystem_channel    = 1;               // Cue Channel (1-32)
-bool   cuesystem_ack_active = false;           // Acknowledged standby status
+String cuesystem_host           = "192.168.1.100"; // CueSystem Hub / Controller IP
+int    cuesystem_port           = 4000;            // CueSystem UDP Port (default 4000)
+int    cuesystem_channel        = 1;               // Cue Channel (1-32)
+bool   cuesystem_standby_active = false;           // Standby active (flashing red until acknowledged)
+bool   cuesystem_ack_active     = false;           // Performer acknowledged (solid red)
 
 // NMOS IS-07 Event & Tally Settings (SMPTE ST 2110)
 String nmos_registry_host   = "192.168.1.50"; // NMOS IS-04 Registration Server
 int    nmos_registry_port   = 8235;           // NMOS Registration Port (default 8235)
 String nmos_source_id       = "urn:uuid:7c9e6679-7425-4094-8f92-d6c1b35b62b1";
-String nmos_event_topic     = "tally/program";
+String nmos_program_topic   = "tally/program"; // Program endpoint (Red)
+String nmos_preview_topic   = "tally/preview"; // Preview endpoint (Green)
+String nmos_aux_topic       = "tally/aux";     // Aux endpoint (Amber)
+bool   nmos_program_active  = false;
+bool   nmos_preview_active  = false;
+bool   nmos_aux_active      = false;
 bool   nmos_is_on_air       = false;
+
+// rtpMIDI / AppleMIDI Configuration & State
+int    rtpmidi_port         = 5004; // Standard RTP-MIDI UDP port (AppleMIDI session & data)
+int    rtpmidi_channel      = 1;    // MIDI Channel: 1-16 (0 = Omni / all channels)
+int    rtpmidi_trigger_type = 0;    // 0 = Note On/Off, 1 = Control Change (CC), 2 = Program Change (PC)
+// Values / Note numbers for each state:
+int    rtpmidi_num_red       = 60; // C4  (Priority 1 - Red)
+int    rtpmidi_num_flash_red = 61; // C#4 (Priority 2 - Flashing Red)
+int    rtpmidi_num_green     = 62; // D4  (Priority 3 - Green)
+int    rtpmidi_num_yellow    = 63; // D#4 (Priority 4 - Yellow)
+int    rtpmidi_num_blue      = 64; // E4  (Priority 5 - Blue)
+int    rtpmidi_num_white     = 65; // F4  (Priority 6 - White)
+// Active states:
+bool   midi_active_red       = false;
+bool   midi_active_flash_red = false;
+bool   midi_active_green     = false;
+bool   midi_active_yellow    = false;
+bool   midi_active_blue      = false;
+bool   midi_active_white     = false;
+
+// OSC (Open Sound Control) Configuration & State
+int    osc_port             = 8000;              // OSC UDP port
+String osc_prefix           = "/cuelight";       // Address prefix (e.g. /cuelight/red)
+String osc_custom_message   = "";                // Scrolling message text received via OSC
+bool   osc_active_red       = false;
+bool   osc_active_flash_red = false;
+bool   osc_active_green     = false;
+bool   osc_active_yellow    = false;
+bool   osc_active_blue      = false;
+bool   osc_active_white     = false;
+
+// IMU Screen Auto-Rotation State
+uint8_t currentRotation      = 0;
+uint8_t pendingRotation      = 0;
+unsigned long pendingRotTime = 0;
 
 // Network IP Configuration (DHCP vs Static IP)
 bool   useDHCP              = true;
@@ -203,6 +246,10 @@ void sendtally(int channel, bool live);
 void sendCueAck();
 void sendNMOSTally(bool live);
 void processIncomingTSL();
+void processRTPMidiPacket(uint8_t* buf, int len, IPAddress remoteIP, uint16_t remotePort);
+void processOSCPacket(uint8_t* buf, int len);
+void evaluateRTPMidiState();
+void evaluateOSCState();
 void evaluateMode();
 void showSettings();
 void showDeviceInfo();
@@ -245,6 +292,14 @@ bool isETCCueSystem() {
 
 bool isNMOSIS07() {
   return operatingMode == "NMOS_IS07";
+}
+
+bool isRTPMidi() {
+  return operatingMode == "RTP_MIDI";
+}
+
+bool isOSC() {
+  return operatingMode == "OSC";
 }
 
 bool usesTallyArbiter() {
@@ -408,17 +463,29 @@ void sendNMOSTally(bool live) {
 }
 
 // ==========================================
-// Incoming Packet Receiver (TSL, ETC CueSystem & NMOS IS-07)
+// Incoming Packet Receiver (TSL, ETC, NMOS, rtpMIDI, OSC)
 // ==========================================
 void processIncomingTSL() {
   int packetSize = udp.parsePacket();
   if (packetSize > 0) {
-    byte packetBuffer[256];
+    byte packetBuffer[512];
     int len = udp.read(packetBuffer, sizeof(packetBuffer) - 1);
     if (len <= 0) return;
     packetBuffer[len] = '\0';
 
-    // 1. Check for ETC CueSystem packet (ASCII text starting with 'CS' or 'CUE')
+    // 1. rtpMIDI / AppleMIDI Mode
+    if (isRTPMidi()) {
+      processRTPMidiPacket(packetBuffer, len, udp.remoteIP(), udp.remotePort());
+      return;
+    }
+
+    // 2. OSC Mode
+    if (isOSC()) {
+      processOSCPacket(packetBuffer, len);
+      return;
+    }
+
+    // 3. ETC CueSystem Mode (ASCII text: CS,<ch>,<CMD> or CUE:<ch>:<CMD>)
     if (isETCCueSystem()) {
       String msg = String((char*)packetBuffer);
       msg.trim();
@@ -432,19 +499,28 @@ void processIncomingTSL() {
           stateCmd.toUpperCase();
           if (ch == cuesystem_channel || ch == 0) {
             if (stateCmd == "STANDBY") {
+              cuesystem_standby_active = true;
+              cuesystem_ack_active = false;
               actualType = "\"standby\"";
-              actualColor = "#FFA500"; // Amber
-              cuesystem_ack_active = false;
-              logger(String("[ETC CueSystem] Channel ") + String(cuesystem_channel) + " STANDBY received", "info");
+              actualColor = "#FF0000";
+              logger(String("[ETC CueSystem] Channel ") + String(cuesystem_channel) + " STANDBY received (Flashing Red until Acknowledged)", "info");
+            } else if (stateCmd == "ACK") {
+              cuesystem_standby_active = true;
+              cuesystem_ack_active = true;
+              actualType = "\"standby\"";
+              actualColor = "#FF0000";
+              logger(String("[ETC CueSystem] Channel ") + String(cuesystem_channel) + " ACKNOWLEDGED (Solid Red)", "info");
             } else if (stateCmd == "GO") {
-              actualType = "\"program\"";
-              actualColor = "#00FF00"; // Green
+              cuesystem_standby_active = false;
               cuesystem_ack_active = false;
-              logger(String("[ETC CueSystem] Channel ") + String(cuesystem_channel) + " GO received", "info");
+              actualType = "\"program\"";
+              actualColor = "#00FF00";
+              logger(String("[ETC CueSystem] Channel ") + String(cuesystem_channel) + " GO received (Solid Green)", "info");
             } else if (stateCmd == "OFF") {
+              cuesystem_standby_active = false;
+              cuesystem_ack_active = false;
               actualType = "";
               actualColor = "";
-              cuesystem_ack_active = false;
               logger(String("[ETC CueSystem] Channel ") + String(cuesystem_channel) + " OFF received", "info");
             }
             renderScreen();
@@ -454,28 +530,56 @@ void processIncomingTSL() {
       }
     }
 
-    // 2. Check for NMOS IS-07 JSON packet (starts with '{')
+    // 4. NMOS IS-07 Event & Tally Mode (JSON payload)
     if (isNMOSIS07()) {
       if (packetBuffer[0] == '{') {
         JSONVar obj = JSON.parse((char*)packetBuffer);
+        String topic = "";
+        if (obj.hasOwnProperty("topic")) topic = (const char*)obj["topic"];
+        else if (obj.hasOwnProperty("event_type")) topic = (const char*)obj["event_type"];
+        else if (obj.hasOwnProperty("source_id")) topic = (const char*)obj["source_id"];
+
+        bool val = false;
         if (obj.hasOwnProperty("payload") && obj["payload"].hasOwnProperty("value")) {
-          bool val = (bool)obj["payload"]["value"];
-          nmos_is_on_air = val;
-          if (val) {
-            actualType = "\"program\"";
-            actualColor = "#FF0000";
-          } else {
-            actualType = "";
-            actualColor = "";
-          }
-          logger(String("[NMOS IS-07] Tally event updated: ") + (val ? "ON-AIR" : "STANDBY"), "info");
-          renderScreen();
-          return;
+          val = (bool)obj["payload"]["value"];
         }
+
+        // Match against Program, Preview, and Aux endpoints
+        if (topic == nmos_program_topic || topic.endsWith("program") || topic.indexOf("prg") >= 0) {
+          nmos_program_active = val;
+        } else if (topic == nmos_preview_topic || topic.endsWith("preview") || topic.indexOf("pvw") >= 0) {
+          nmos_preview_active = val;
+        } else if (topic == nmos_aux_topic || topic.endsWith("aux")) {
+          nmos_aux_active = val;
+        } else {
+          nmos_program_active = val;
+        }
+
+        // Priority: Program (Red) > Preview (Green) > Aux (Amber)
+        if (nmos_program_active) {
+          actualType = "\"program\"";
+          actualColor = "#FF0000";
+          nmos_is_on_air = true;
+        } else if (nmos_preview_active) {
+          actualType = "\"preview\"";
+          actualColor = "#00FF00";
+          nmos_is_on_air = false;
+        } else if (nmos_aux_active) {
+          actualType = "\"aux\"";
+          actualColor = "#FFA500";
+          nmos_is_on_air = false;
+        } else {
+          actualType = "";
+          actualColor = "";
+          nmos_is_on_air = false;
+        }
+        logger(String("[NMOS IS-07] Tally event on '") + topic + "' -> " + (val ? "ACTIVE" : "OFF"), "info");
+        renderScreen();
+        return;
       }
     }
 
-    // 3. Standard TSL 3.1 UDP packet (18 bytes)
+    // 5. Standard TSL 3.1 UDP packet (18 bytes)
     if (len >= 18) {
       byte ctrl = packetBuffer[1];
       bool redTally = (ctrl & REDTALLY) != 0;
@@ -519,47 +623,292 @@ void processIncomingTSL() {
 }
 
 // ==========================================
+// rtpMIDI / AppleMIDI Session & Data Parser
+// ==========================================
+void processRTPMidiPacket(uint8_t* buf, int len, IPAddress remoteIP, uint16_t remotePort) {
+  // AppleMIDI Session Protocol Management
+  if (len >= 4 && buf[0] == 0xFF && buf[1] == 0xFF) {
+    if (buf[2] == 'I' && buf[3] == 'N') {
+      // Invitation: reply with 'OK' so DAW / AppleMIDI driver connects immediately
+      uint8_t okResp[16];
+      okResp[0] = 0xFF; okResp[1] = 0xFF;
+      okResp[2] = 'O'; okResp[3] = 'K';
+      memcpy(okResp + 4, buf + 4, 8); // Protocol version & session token
+      uint32_t localSSRC = 0x41544F4D; // "ATOM" SSRC
+      memcpy(okResp + 12, &localSSRC, 4);
+      udp.beginPacket(remoteIP, remotePort);
+      udp.write(okResp, 16);
+      udp.endPacket();
+      logger(String("[rtpMIDI] AppleMIDI session accepted from ") + remoteIP.toString() + ":" + String(remotePort), "info");
+      return;
+    } else if (buf[2] == 'C' && buf[3] == 'K') {
+      // Clock sync packet: echo back
+      uint8_t ckResp[len];
+      memcpy(ckResp, buf, len);
+      udp.beginPacket(remoteIP, remotePort);
+      udp.write(ckResp, len);
+      udp.endPacket();
+      return;
+    }
+  }
+
+  // MIDI Stream Parser (supports raw MIDI, RTP-MIDI payload 97, and AppleMIDI 'md' command)
+  int targetCh = (rtpmidi_channel == 0) ? -1 : (rtpmidi_channel - 1);
+
+  for (int i = 0; i < len; i++) {
+    uint8_t b = buf[i];
+    // Check if this is a MIDI status byte
+    if ((b & 0x80) != 0 && b < 0xF0) {
+      uint8_t cmd = b & 0xF0;
+      uint8_t ch = b & 0x0F;
+
+      if (targetCh == -1 || ch == targetCh) {
+        if (cmd == 0x90 && i + 2 < len) {
+          // Note On
+          int note = buf[i + 1];
+          int vel  = buf[i + 2];
+          bool on = (vel > 0);
+
+          if (rtpmidi_trigger_type == 0) { // Note mode
+            if (note == rtpmidi_num_red)       midi_active_red = on;
+            if (note == rtpmidi_num_flash_red) midi_active_flash_red = on;
+            if (note == rtpmidi_num_green)     midi_active_green = on;
+            if (note == rtpmidi_num_yellow)    midi_active_yellow = on;
+            if (note == rtpmidi_num_blue)      midi_active_blue = on;
+            if (note == rtpmidi_num_white)     midi_active_white = on;
+          }
+          i += 2;
+        } else if (cmd == 0x80 && i + 2 < len) {
+          // Note Off
+          int note = buf[i + 1];
+          if (rtpmidi_trigger_type == 0) {
+            if (note == rtpmidi_num_red)       midi_active_red = false;
+            if (note == rtpmidi_num_flash_red) midi_active_flash_red = false;
+            if (note == rtpmidi_num_green)     midi_active_green = false;
+            if (note == rtpmidi_num_yellow)    midi_active_yellow = false;
+            if (note == rtpmidi_num_blue)      midi_active_blue = false;
+            if (note == rtpmidi_num_white)     midi_active_white = false;
+          }
+          i += 2;
+        } else if (cmd == 0xB0 && i + 2 < len) {
+          // Control Change (CC)
+          int ccNum = buf[i + 1];
+          int ccVal = buf[i + 2];
+          bool on = (ccVal >= 64);
+
+          if (rtpmidi_trigger_type == 1) { // CC mode
+            if (ccNum == rtpmidi_num_red)       midi_active_red = on;
+            if (ccNum == rtpmidi_num_flash_red) midi_active_flash_red = on;
+            if (ccNum == rtpmidi_num_green)     midi_active_green = on;
+            if (ccNum == rtpmidi_num_yellow)    midi_active_yellow = on;
+            if (ccNum == rtpmidi_num_blue)      midi_active_blue = on;
+            if (ccNum == rtpmidi_num_white)     midi_active_white = on;
+          }
+          i += 2;
+        } else if (cmd == 0xC0 && i + 1 < len) {
+          // Program Change (PC)
+          int pcNum = buf[i + 1];
+          if (rtpmidi_trigger_type == 2) { // PC mode
+            midi_active_red       = (pcNum == rtpmidi_num_red);
+            midi_active_flash_red = (pcNum == rtpmidi_num_flash_red);
+            midi_active_green     = (pcNum == rtpmidi_num_green);
+            midi_active_yellow    = (pcNum == rtpmidi_num_yellow);
+            midi_active_blue      = (pcNum == rtpmidi_num_blue);
+            midi_active_white     = (pcNum == rtpmidi_num_white);
+          }
+          i += 1;
+        }
+      }
+    }
+  }
+
+  evaluateRTPMidiState();
+}
+
+// Evaluate rtpMIDI Priority: Red > Flashing Red > Green > Yellow > Blue > White > Off
+void evaluateRTPMidiState() {
+  if (midi_active_red) {
+    actualType = "\"program\"";
+    actualColor = "#FF0000";
+  } else if (midi_active_flash_red) {
+    actualType = "\"flashred\"";
+    actualColor = "#FF0000";
+  } else if (midi_active_green) {
+    actualType = "\"preview\"";
+    actualColor = "#00FF00";
+  } else if (midi_active_yellow) {
+    actualType = "\"yellow\"";
+    actualColor = "#FFFF00";
+  } else if (midi_active_blue) {
+    actualType = "\"blue\"";
+    actualColor = "#0088FF";
+  } else if (midi_active_white) {
+    actualType = "\"white\"";
+    actualColor = "#FFFFFF";
+  } else {
+    actualType = "";
+    actualColor = "";
+  }
+  renderScreen();
+}
+
+// ==========================================
+// OSC (Open Sound Control) Parser
+// ==========================================
+void processOSCPacket(uint8_t* buf, int len) {
+  if (len < 4) return;
+  String addr = String((char*)buf);
+  int addrLen = addr.length();
+  int tagOffset = (addrLen + 4) & ~0x03;
+
+  if (tagOffset < len && buf[tagOffset] == ',') {
+    char typeTag = (char)buf[tagOffset + 1];
+    int argOffset = tagOffset + 4;
+
+    // Check for Text Message endpoint (scrolls on screen instead of DeviceName)
+    if (addr == osc_prefix + "/text" || addr == osc_prefix + "/message" || addr.endsWith("/text") || addr.endsWith("/message")) {
+      if (typeTag == 's' && argOffset < len) {
+        osc_custom_message = String((char*)(buf + argOffset));
+        logger(String("[OSC] Custom message received: ") + osc_custom_message, "info");
+        renderScreen();
+        return;
+      }
+    }
+
+    // Extract float or int state argument
+    float val = 0.0f;
+    if (typeTag == 'f' && argOffset + 4 <= len) {
+      uint32_t rawVal = ((uint32_t)buf[argOffset] << 24) | ((uint32_t)buf[argOffset+1] << 16) | ((uint32_t)buf[argOffset+2] << 8) | buf[argOffset+3];
+      memcpy(&val, &rawVal, 4);
+    } else if (typeTag == 'i' && argOffset + 4 <= len) {
+      int32_t rawVal = ((int32_t)buf[argOffset] << 24) | ((int32_t)buf[argOffset+1] << 16) | ((int32_t)buf[argOffset+2] << 8) | buf[argOffset+3];
+      val = (float)rawVal;
+    } else if (typeTag == 'T') {
+      val = 1.0f;
+    } else if (typeTag == 'F') {
+      val = 0.0f;
+    }
+
+    bool on = (val > 0.0f);
+    if (addr == osc_prefix + "/red" || addr.endsWith("/red"))            osc_active_red = on;
+    else if (addr == osc_prefix + "/flashred" || addr.endsWith("/flashred") || addr.endsWith("/flash")) osc_active_flash_red = on;
+    else if (addr == osc_prefix + "/green" || addr.endsWith("/green"))        osc_active_green = on;
+    else if (addr == osc_prefix + "/yellow" || addr.endsWith("/yellow"))      osc_active_yellow = on;
+    else if (addr == osc_prefix + "/blue" || addr.endsWith("/blue"))          osc_active_blue = on;
+    else if (addr == osc_prefix + "/white" || addr.endsWith("/white"))        osc_active_white = on;
+
+    evaluateOSCState();
+  }
+}
+
+// Evaluate OSC Priority: Red > Flashing Red > Green > Yellow > Blue > White > Off
+void evaluateOSCState() {
+  if (osc_active_red) {
+    actualType = "\"program\"";
+    actualColor = "#FF0000";
+  } else if (osc_active_flash_red) {
+    actualType = "\"flashred\"";
+    actualColor = "#FF0000";
+  } else if (osc_active_green) {
+    actualType = "\"preview\"";
+    actualColor = "#00FF00";
+  } else if (osc_active_yellow) {
+    actualType = "\"yellow\"";
+    actualColor = "#FFFF00";
+  } else if (osc_active_blue) {
+    actualType = "\"blue\"";
+    actualColor = "#0088FF";
+  } else if (osc_active_white) {
+    actualType = "\"white\"";
+    actualColor = "#FFFFFF";
+  } else {
+    actualType = "";
+    actualColor = "";
+  }
+  renderScreen();
+}
+
+// ==========================================
 // Double-Buffered Screen Rendering
 // ==========================================
 void renderScreen() {
+  // Compute Background Color and Text Color for BOTH Screen 0 and Screen 1 (Diagnostics)
+  uint16_t bgColor = TFT_BLACK;
+  uint16_t textColor = TFT_WHITE;
+  String statusLabel = "STANDBY";
+
+  bool flashPhase = (millis() / 400) % 2 == 0;
+
+  // 1. ETC CueSystem: Standby is Flashing Red until Acknowledged (Solid Red)
+  if (isETCCueSystem()) {
+    if (actualType == "\"standby\"") {
+      if (!cuesystem_ack_active) {
+        // Unacknowledged: Flashing Red!
+        bgColor = flashPhase ? TFT_RED : TFT_BLACK;
+        textColor = flashPhase ? TFT_WHITE : TFT_RED;
+        statusLabel = "STANDBY";
+      } else {
+        // Performer Acknowledged: Solid Red!
+        bgColor = TFT_RED;
+        textColor = TFT_WHITE;
+        statusLabel = "ACKNOWLEDGED";
+      }
+    } else if (actualType == "\"program\"") {
+      bgColor = TFT_GREEN;
+      textColor = TFT_BLACK;
+      statusLabel = "GO";
+    } else {
+      bgColor = TFT_BLACK;
+      textColor = TFT_WHITE;
+      statusLabel = "CUE OFF";
+    }
+  } else if (actualType == "\"flashred\"") {
+    // rtpMIDI or OSC Flashing Red State
+    bgColor = flashPhase ? TFT_RED : TFT_BLACK;
+    textColor = flashPhase ? TFT_WHITE : TFT_RED;
+    statusLabel = "FLASH RED";
+  } else if (actualType == "\"program\"") {
+    bgColor = TFT_RED;
+    textColor = TFT_WHITE;
+    statusLabel = isNMOSIS07() ? "ON-AIR" : (isRTPMidi() || isOSC() ? "RED" : "PROGRAM");
+  } else if (actualType == "\"preview\"") {
+    bgColor = TFT_GREEN;
+    textColor = TFT_BLACK;
+    statusLabel = isRTPMidi() || isOSC() ? "GREEN" : "PREVIEW";
+  } else if (actualType == "\"yellow\"") {
+    bgColor = TFT_YELLOW;
+    textColor = TFT_BLACK;
+    statusLabel = "YELLOW";
+  } else if (actualType == "\"blue\"") {
+    bgColor = TFT_BLUE;
+    textColor = TFT_WHITE;
+    statusLabel = "BLUE";
+  } else if (actualType == "\"white\"") {
+    bgColor = TFT_WHITE;
+    textColor = TFT_BLACK;
+    statusLabel = "WHITE";
+  } else if (actualType == "\"aux\"") {
+    bgColor = TFT_ORANGE;
+    textColor = TFT_BLACK;
+    statusLabel = "AUX";
+  } else if (actualColor.length() > 0 && actualColor != "invalid") {
+    String hexstring = actualColor;
+    hexstring.replace("#", "");
+    long number = (long)strtol(hexstring.c_str(), NULL, 16);
+    int r = (number >> 16) & 0xFF;
+    int g = (number >> 8) & 0xFF;
+    int b = number & 0xFF;
+    bgColor = M5.Display.color565(r, g, b);
+    textColor = (r + g + b > 380) ? TFT_BLACK : TFT_WHITE;
+    statusLabel = actualType;
+    statusLabel.replace("\"", "");
+    statusLabel.toUpperCase();
+  }
+
   if (currentScreen == 0) {
     // ----------------------------------------
     // Screen 0: Tally & Cue Display (128x128)
     // ----------------------------------------
-    uint16_t bgColor = TFT_BLACK;
-    uint16_t textColor = TFT_WHITE;
-    String statusLabel = "STANDBY";
-
-    if (actualType == "\"program\"") {
-      bgColor = TFT_RED;
-      textColor = TFT_WHITE;
-      statusLabel = "PROGRAM";
-    } else if (actualType == "\"preview\"") {
-      bgColor = TFT_GREEN;
-      textColor = TFT_BLACK;
-      statusLabel = "PREVIEW";
-    } else if (actualType == "\"standby\"") {
-      bgColor = TFT_ORANGE;
-      textColor = TFT_BLACK;
-      statusLabel = "STANDBY";
-    } else if (actualType == "\"aux\"") {
-      bgColor = TFT_ORANGE;
-      textColor = TFT_BLACK;
-      statusLabel = "AUX";
-    } else if (actualColor.length() > 0 && actualColor != "invalid") {
-      String hexstring = actualColor;
-      hexstring.replace("#", "");
-      long number = (long)strtol(hexstring.c_str(), NULL, 16);
-      int r = (number >> 16) & 0xFF;
-      int g = (number >> 8) & 0xFF;
-      int b = number & 0xFF;
-      bgColor = M5.Display.color565(r, g, b);
-      textColor = (r + g + b > 380) ? TFT_BLACK : TFT_WHITE;
-      statusLabel = actualType;
-      statusLabel.replace("\"", "");
-      statusLabel.toUpperCase();
-    }
-
     auto renderContent = [&](M5Canvas* g) {
       g->fillScreen(bgColor);
 
@@ -587,13 +936,31 @@ void renderScreen() {
       g->setTextColor(TFT_WHITE, TFT_BLACK);
       g->drawString(timeStr, 64, 16);
 
-      // Device Name directly below clock box
-      g->setTextDatum(middle_center);
+      // Device Name / OSC Scrolling Text Message
+      String displayName = DeviceName;
+      if (isOSC() && osc_custom_message.length() > 0) {
+        displayName = osc_custom_message;
+      }
+
       g->setTextSize(2);
       g->setTextColor(textColor, bgColor);
-      g->drawString(DeviceName, 64, 46);
+      int textWidth = g->textWidth(displayName.c_str());
+
+      if (textWidth > 116) {
+        // Text is too long for the 128px screen: smoothly scroll horizontally (ticker style)
+        int scrollRange = textWidth + 60;
+        int offset = (millis() / 35) % scrollRange;
+        int startX = 120 - offset;
+        g->setTextDatum(middle_left);
+        g->drawString(displayName, startX, 46);
+      } else {
+        // Fits within screen: draw centered
+        g->setTextDatum(middle_center);
+        g->drawString(displayName, 64, 46);
+      }
 
       // Tally Status Tag
+      g->setTextDatum(middle_center);
       g->setTextSize(1);
       g->drawRoundRect(14, 62, 100, 18, 4, textColor);
       g->drawString(statusLabel, 64, 71);
@@ -610,6 +977,8 @@ void renderScreen() {
       else if (operatingMode == "TP_P2P") roleBadge = "[P2P TP]";
       else if (operatingMode == "ETC_CueSystem") roleBadge = "[ETC CUE]";
       else if (operatingMode == "NMOS_IS07") roleBadge = "[NMOS-07]";
+      else if (operatingMode == "RTP_MIDI") roleBadge = "[rtpMIDI]";
+      else if (operatingMode == "OSC") roleBadge = "[OSC CUE]";
       g->print(roleBadge);
 
       g->setCursor(68, 86);
@@ -617,6 +986,10 @@ void renderScreen() {
         g->print("Ch: " + String(cuesystem_channel));
       } else if (isNMOSIS07()) {
         g->print("IS-07");
+      } else if (isRTPMidi()) {
+        g->print("Ch:" + String(rtpmidi_channel == 0 ? "Omni" : String(rtpmidi_channel)));
+      } else if (isOSC()) {
+        g->print("Port:" + String(osc_port));
       } else if (isP2PMode()) {
         g->print("Grp: " + pairingGroup.substring(0, 6));
       } else {
@@ -634,8 +1007,13 @@ void renderScreen() {
         }
       } else if (isNMOSIS07()) {
         g->setTextColor(textColor, bgColor);
-        g->print("Topic: ");
-        g->print(String(nmos_event_topic).substring(0, 9));
+        g->print("Prg/Pvw/Aux");
+      } else if (isRTPMidi()) {
+        g->setTextColor(textColor, bgColor);
+        g->print("AppleMIDI 5004");
+      } else if (isOSC()) {
+        g->setTextColor(textColor, bgColor);
+        g->print(osc_prefix.substring(0, 14));
       } else if (isPresenter()) {
         g->print("Cue(PVW): ");
         if (ch1state) {
@@ -656,7 +1034,7 @@ void renderScreen() {
         }
       }
 
-      // Presenter Cue Alert on TP unit OR Network IP
+      // Bottom line: Presenter Cue Alert on TP unit OR Network IP
       g->setCursor(4, 112);
       if (isTP() && presenterCueActive) {
         g->setTextColor(TFT_YELLOW, TFT_RED);
@@ -682,15 +1060,23 @@ void renderScreen() {
     // Screen 1: Network & Diagnostics (128x128)
     // ----------------------------------------
     auto renderContent = [&](M5Canvas* g) {
-      g->fillScreen(TFT_BLACK);
-      g->setTextDatum(top_left);
-      g->setTextColor(TFT_CYAN, TFT_BLACK);
-      g->setTextSize(1);
-      g->setCursor(4, 4);
-      g->println("ATOM S3R DIAGNOSTICS");
-      g->drawFastHLine(2, 16, 124, TFT_DARKGRAY);
+      // REQUIREMENT 2: Background follows the current tally state!
+      g->fillScreen(bgColor);
 
-      g->setTextColor(TFT_WHITE, TFT_BLACK);
+      bool isLightBg = (bgColor == TFT_WHITE || bgColor == TFT_YELLOW || bgColor == TFT_GREEN);
+      uint16_t bannerBg = TFT_BLACK;
+      uint16_t bannerText = TFT_CYAN;
+      uint16_t dTextColor = isLightBg ? TFT_BLACK : TFT_WHITE;
+
+      g->fillRoundRect(2, 2, 124, 15, 3, bannerBg);
+      g->setTextDatum(middle_center);
+      g->setTextColor(bannerText, bannerBg);
+      g->setTextSize(1);
+      g->drawString("ATOM S3R DIAGNOSTICS", 64, 9);
+
+      g->setTextDatum(top_left);
+      g->setTextColor(dTextColor, bgColor);
+
       g->setCursor(4, 20);
       g->print("Mode: ");
       g->println(operatingMode);
@@ -711,6 +1097,14 @@ void renderScreen() {
         g->print(nmos_registry_host);
         g->print(":");
         g->println(nmos_registry_port);
+      } else if (isRTPMidi()) {
+        g->print("MIDI: Ch ");
+        g->print(rtpmidi_channel == 0 ? "Omni" : String(rtpmidi_channel));
+        g->print(" Port:");
+        g->println(rtpmidi_port);
+      } else if (isOSC()) {
+        g->print("OSC:  Port ");
+        g->println(osc_port);
       } else if (isP2PMode()) {
         g->print("Peer: ");
         g->println(pairedTargetIP.length() > 0 ? pairedTargetIP : "Unpaired (B-cast)");
@@ -720,22 +1114,13 @@ void renderScreen() {
       }
 
       g->setCursor(4, 56);
-      if (!useDHCP) {
-        g->print("Mask: ");
-        g->println(static_mask);
-      } else {
-        g->print("Grp:  ");
-        g->println(pairingGroup);
-      }
+      g->print("Tally: ");
+      g->println(statusLabel);
 
       g->setCursor(4, 68);
-      if (!useDHCP) {
-        g->print("GW:   ");
-        g->println(static_gw);
-      } else {
-        g->print("Port: ");
-        g->println(tallyarbiter_TSLport);
-      }
+      g->print("Rot:  ");
+      g->print(currentRotation * 90);
+      g->println(" deg (IMU)");
 
       g->setCursor(4, 80);
       g->print("D-Buffer: ");
@@ -869,6 +1254,12 @@ void setupWebServer() {
               "<option value='NMOS_IS07'");
     if (operatingMode == "NMOS_IS07") html += F(" selected");
     html += F(">NMOS IS-07 Event & Tally (SMPTE ST 2110)</option>"
+              "<option value='RTP_MIDI'");
+    if (operatingMode == "RTP_MIDI") html += F(" selected");
+    html += F(">rtpMIDI / AppleMIDI Outstation</option>"
+              "<option value='OSC'");
+    if (operatingMode == "OSC") html += F(" selected");
+    html += F(">OSC (Open Sound Control) Outstation</option>"
               "</select>"
 
               // Section: Network IP Configuration
@@ -951,10 +1342,10 @@ void setupWebServer() {
               "<label>Cue Channel (1 - 32)</label><input type='number' name='cue_channel' min='1' max='32' value='");
     html += String(cuesystem_channel);
     html += F("'>"
-              "<div class='hint'>Listens for Standby (Amber) and Go (Green). Pressing button sends ACK to hub.</div>"
+              "<div class='hint'>Standby displays flashing red until acknowledged (solid red). Pressing button sends ACK to hub.</div>"
               "</div>"
 
-              // Section: NMOS IS-07
+              // Section: NMOS IS-07 (Program, Preview, Aux Endpoints)
               "<div id='sec-nmos' class='section-box'>"
               "<h2>AMWA NMOS IS-07 Event & Tally</h2>"
               "<div class='grid-2'>"
@@ -964,14 +1355,77 @@ void setupWebServer() {
               "<div><label>IS-04 Registry Port</label><input type='number' name='nmos_port' value='");
     html += String(nmos_registry_port);
     html += F("'></div></div>"
-              "<div class='grid-2'>"
-              "<div><label>Source / Device UUID</label><input type='text' name='nmos_source' value='");
+              "<label>Source / Device UUID</label><input type='text' name='nmos_source' value='");
     html += nmos_source_id;
+    html += F("'>"
+              "<div class='grid-3'>"
+              "<div><label>Program Topic / Endpoint</label><input type='text' name='nmos_prg_topic' value='");
+    html += nmos_program_topic;
     html += F("'></div>"
-              "<div><label>IS-07 Event Topic</label><input type='text' name='nmos_topic' value='");
-    html += nmos_event_topic;
+              "<div><label>Preview Topic / Endpoint</label><input type='text' name='nmos_pvw_topic' value='");
+    html += nmos_preview_topic;
+    html += F("'></div>"
+              "<div><label>Aux Topic / Endpoint</label><input type='text' name='nmos_aux_topic' value='");
+    html += nmos_aux_topic;
     html += F("'></div></div>"
-              "<div class='hint'>Integrates with SMPTE ST 2110 IP broadcast routing & IS-07 state emitters.</div>"
+              "<div class='hint'>Integrates with SMPTE ST 2110 IP broadcast routing: Program (Red), Preview (Green), Aux (Amber).</div>"
+              "</div>"
+
+              // Section: rtpMIDI / AppleMIDI
+              "<div id='sec-rtpmidi' class='section-box'>"
+              "<h2>rtpMIDI / AppleMIDI Configuration</h2>"
+              "<div class='grid-3'>"
+              "<div><label>RTP-MIDI UDP Port</label><input type='number' name='midi_port' value='");
+    html += String(rtpmidi_port);
+    html += F("'></div>"
+              "<div><label>MIDI Channel (0 = Omni)</label><input type='number' name='midi_chan' min='0' max='16' value='");
+    html += String(rtpmidi_channel);
+    html += F("'></div>"
+              "<div><label>Trigger Mode</label><select name='midi_trig'>"
+              "<option value='0'");
+    if (rtpmidi_trigger_type == 0) html += F(" selected");
+    html += F(">Note On / Note Off</option><option value='1'");
+    if (rtpmidi_trigger_type == 1) html += F(" selected");
+    html += F(">Control Change (CC)</option><option value='2'");
+    if (rtpmidi_trigger_type == 2) html += F(" selected");
+    html += F(">Program Change (PC)</option></select></div></div>"
+              "<p style='font-size:12px;color:#94a3b8;margin:8px 0 4px 0;'>State Triggers (Priority Order: Red &gt; Flash Red &gt; Green &gt; Yellow &gt; Blue &gt; White):</p>"
+              "<div class='grid-3'>"
+              "<div><label>1. Red Note/CC/PC</label><input type='number' name='midi_red' value='");
+    html += String(rtpmidi_num_red);
+    html += F("'></div>"
+              "<div><label>2. Flash Red Note/CC/PC</label><input type='number' name='midi_flash' value='");
+    html += String(rtpmidi_num_flash_red);
+    html += F("'></div>"
+              "<div><label>3. Green Note/CC/PC</label><input type='number' name='midi_green' value='");
+    html += String(rtpmidi_num_green);
+    html += F("'></div>"
+              "<div><label>4. Yellow Note/CC/PC</label><input type='number' name='midi_yellow' value='");
+    html += String(rtpmidi_num_yellow);
+    html += F("'></div>"
+              "<div><label>5. Blue Note/CC/PC</label><input type='number' name='midi_blue' value='");
+    html += String(rtpmidi_num_blue);
+    html += F("'></div>"
+              "<div><label>6. White Note/CC/PC</label><input type='number' name='midi_white' value='");
+    html += String(rtpmidi_num_white);
+    html += F("'></div></div>"
+              "<div class='hint'>Connects directly to DAWs (Logic, Pro Tools, QLab, Ableton, rtpMIDI) via AppleMIDI session on UDP port 5004.</div>"
+              "</div>"
+
+              // Section: OSC (Open Sound Control)
+              "<div id='sec-osc' class='section-box'>"
+              "<h2>OSC (Open Sound Control) Configuration</h2>"
+              "<div class='grid-2'>"
+              "<div><label>OSC UDP Port</label><input type='number' name='osc_port' value='");
+    html += String(osc_port);
+    html += F("'></div>"
+              "<div><label>Address Prefix</label><input type='text' name='osc_prefix' value='");
+    html += osc_prefix;
+    html += F("'></div></div>"
+              "<label>Custom Text Message (Replaces Device Name, scrolls if long)</label><input type='text' name='osc_msg' value='");
+    html += osc_custom_message;
+    html += F("'>"
+              "<div class='hint'>Listens for /cuelight/red, /flashred, /green, /yellow, /blue, /white [1/0] and /cuelight/text [string].</div>"
               "</div>"
 
               "<button type='submit' class='btn-save'>Save Settings & Apply</button>"
@@ -997,6 +1451,8 @@ void setupWebServer() {
               "  document.getElementById('sec-p2p-scan').style.display = (m==='TP_P2P'||m==='Presenter_P2P') ? 'block' : 'none';"
               "  document.getElementById('sec-cuesystem').style.display = (m==='ETC_CueSystem') ? 'block' : 'none';"
               "  document.getElementById('sec-nmos').style.display = (m==='NMOS_IS07') ? 'block' : 'none';"
+              "  document.getElementById('sec-rtpmidi').style.display = (m==='RTP_MIDI') ? 'block' : 'none';"
+              "  document.getElementById('sec-osc').style.display = (m==='OSC') ? 'block' : 'none';"
               "}"
               "updateModeUI();"
               "async function scanPeers(){"
@@ -1052,11 +1508,22 @@ void setupWebServer() {
     obj["cuesystemPort"] = cuesystem_port;
     obj["cuesystemChannel"] = cuesystem_channel;
     obj["cuesystemAckActive"] = cuesystem_ack_active;
+    obj["cuesystemStandbyActive"] = cuesystem_standby_active;
     obj["nmosHost"] = nmos_registry_host;
     obj["nmosPort"] = nmos_registry_port;
     obj["nmosSource"] = nmos_source_id;
-    obj["nmosTopic"] = nmos_event_topic;
+    obj["nmosTopic"] = nmos_program_topic;
+    obj["nmosPrgTopic"] = nmos_program_topic;
+    obj["nmosPvwTopic"] = nmos_preview_topic;
+    obj["nmosAuxTopic"] = nmos_aux_topic;
     obj["nmosOnAir"] = nmos_is_on_air;
+    obj["midiPort"] = rtpmidi_port;
+    obj["midiChan"] = rtpmidi_channel;
+    obj["midiTrig"] = rtpmidi_trigger_type;
+    obj["oscPort"] = osc_port;
+    obj["oscPrefix"] = osc_prefix;
+    obj["oscMsg"] = osc_custom_message;
+    obj["rotation"] = (int)(currentRotation * 90);
     obj["pairingGroup"] = pairingGroup;
     obj["pairedTargetIP"] = pairedTargetIP;
     obj["pairedTargetName"] = pairedTargetName;
@@ -1065,6 +1532,8 @@ void setupWebServer() {
     obj["isP2P"] = isP2PMode();
     obj["isCueSystem"] = isETCCueSystem();
     obj["isNMOS"] = isNMOSIS07();
+    obj["isRTPMidi"] = isRTPMidi();
+    obj["isOSC"] = isOSC();
     obj["presenterCueActive"] = presenterCueActive;
     obj["host"] = tallyarbiter_host;
     obj["port"] = tallyarbiter_port;
@@ -1171,7 +1640,7 @@ void setupWebServer() {
       cuesystem_channel = request->getParam("cue_channel", true)->value().toInt();
     }
 
-    // NMOS IS-07 settings
+    // NMOS IS-07 settings (Program, Preview, Aux)
     if (request->hasParam("nmos_host", true)) {
       nmos_registry_host = request->getParam("nmos_host", true)->value();
     }
@@ -1181,8 +1650,54 @@ void setupWebServer() {
     if (request->hasParam("nmos_source", true)) {
       nmos_source_id = request->getParam("nmos_source", true)->value();
     }
-    if (request->hasParam("nmos_topic", true)) {
-      nmos_event_topic = request->getParam("nmos_topic", true)->value();
+    if (request->hasParam("nmos_prg_topic", true)) {
+      nmos_program_topic = request->getParam("nmos_prg_topic", true)->value();
+    }
+    if (request->hasParam("nmos_pvw_topic", true)) {
+      nmos_preview_topic = request->getParam("nmos_pvw_topic", true)->value();
+    }
+    if (request->hasParam("nmos_aux_topic", true)) {
+      nmos_aux_topic = request->getParam("nmos_aux_topic", true)->value();
+    }
+
+    // rtpMIDI settings
+    if (request->hasParam("midi_port", true)) {
+      rtpmidi_port = request->getParam("midi_port", true)->value().toInt();
+    }
+    if (request->hasParam("midi_chan", true)) {
+      rtpmidi_channel = request->getParam("midi_chan", true)->value().toInt();
+    }
+    if (request->hasParam("midi_trig", true)) {
+      rtpmidi_trigger_type = request->getParam("midi_trig", true)->value().toInt();
+    }
+    if (request->hasParam("midi_red", true)) {
+      rtpmidi_num_red = request->getParam("midi_red", true)->value().toInt();
+    }
+    if (request->hasParam("midi_flash", true)) {
+      rtpmidi_num_flash_red = request->getParam("midi_flash", true)->value().toInt();
+    }
+    if (request->hasParam("midi_green", true)) {
+      rtpmidi_num_green = request->getParam("midi_green", true)->value().toInt();
+    }
+    if (request->hasParam("midi_yellow", true)) {
+      rtpmidi_num_yellow = request->getParam("midi_yellow", true)->value().toInt();
+    }
+    if (request->hasParam("midi_blue", true)) {
+      rtpmidi_num_blue = request->getParam("midi_blue", true)->value().toInt();
+    }
+    if (request->hasParam("midi_white", true)) {
+      rtpmidi_num_white = request->getParam("midi_white", true)->value().toInt();
+    }
+
+    // OSC settings
+    if (request->hasParam("osc_port", true)) {
+      osc_port = request->getParam("osc_port", true)->value().toInt();
+    }
+    if (request->hasParam("osc_prefix", true)) {
+      osc_prefix = request->getParam("osc_prefix", true)->value();
+    }
+    if (request->hasParam("osc_msg", true)) {
+      osc_custom_message = request->getParam("osc_msg", true)->value();
     }
 
     // P2P and Tally Arbiter settings
@@ -1225,7 +1740,21 @@ void setupWebServer() {
     preferences.putString("nmosHost", nmos_registry_host);
     preferences.putInt("nmosPort", nmos_registry_port);
     preferences.putString("nmosSrc", nmos_source_id);
-    preferences.putString("nmosTopic", nmos_event_topic);
+    preferences.putString("nmosPrg", nmos_program_topic);
+    preferences.putString("nmosPvw", nmos_preview_topic);
+    preferences.putString("nmosAux", nmos_aux_topic);
+    preferences.putInt("midiPort", rtpmidi_port);
+    preferences.putInt("midiChan", rtpmidi_channel);
+    preferences.putInt("midiTrig", rtpmidi_trigger_type);
+    preferences.putInt("midiRed", rtpmidi_num_red);
+    preferences.putInt("midiFlash", rtpmidi_num_flash_red);
+    preferences.putInt("midiGreen", rtpmidi_num_green);
+    preferences.putInt("midiYellow", rtpmidi_num_yellow);
+    preferences.putInt("midiBlue", rtpmidi_num_blue);
+    preferences.putInt("midiWhite", rtpmidi_num_white);
+    preferences.putInt("oscPort", osc_port);
+    preferences.putString("oscPrefix", osc_prefix);
+    preferences.putString("oscMsg", osc_custom_message);
     preferences.putString("pairGroup", pairingGroup);
     preferences.putString("pairIP", pairedTargetIP);
     preferences.putString("pairName", pairedTargetName);
@@ -1272,14 +1801,15 @@ void setup() {
   Serial.begin(115200);
   delay(100);
 
-  // Initialize M5Unified
+  // Initialize M5Unified & Onboard 6-Axis IMU (BMI270/MPU6886)
   auto cfg = M5.config();
   M5.begin(cfg);
-  M5.Display.setRotation(0); // 128x128 upright
+  M5.Imu.begin();
+  M5.Display.setRotation(currentRotation); // Default upright
   M5.Display.setBrightness(brightnessLevels[brightnessIndex]);
 
   logger("==========================================", "info");
-  logger("M5AtomS3R + AtomPoE TSL / Tally Arbiter", "info");
+  logger("M5AtomS3R + AtomPoE Cue & Tally Controller", "info");
   logger("==========================================", "info");
 
   // Attempt to allocate double buffer canvas
@@ -1301,7 +1831,7 @@ void setup() {
     canvas.setTextDatum(middle_center);
     canvas.setTextSize(1);
     canvas.drawString("M5AtomS3R PoE", 64, 40);
-    canvas.drawString("Tally Arbiter", 64, 60);
+    canvas.drawString("Tally & Cue LX", 64, 60);
     canvas.setTextColor(TFT_CYAN, TFT_BLACK);
     canvas.drawString("Booting...", 64, 85);
     canvas.pushSprite(0, 0);
@@ -1313,72 +1843,42 @@ void setup() {
 
   // Load Preferences
   preferences.begin("tally-arbiter", false);
-  if (preferences.getString("deviceid").length() > 0) {
-    DeviceId = preferences.getString("deviceid");
-  }
-  if (preferences.getString("devicename").length() > 0) {
-    DeviceName = preferences.getString("devicename");
-  }
-  if (preferences.getString("opMode").length() > 0) {
-    operatingMode = preferences.getString("opMode");
-  }
-  if (preferences.isKey("useDHCP")) {
-    useDHCP = preferences.getBool("useDHCP", true);
-  }
-  if (preferences.getString("staticIP").length() > 0) {
-    static_ip = preferences.getString("staticIP");
-  }
-  if (preferences.getString("staticMask").length() > 0) {
-    static_mask = preferences.getString("staticMask");
-  }
-  if (preferences.getString("staticGW").length() > 0) {
-    static_gw = preferences.getString("staticGW");
-  }
-  if (preferences.getString("staticDNS").length() > 0) {
-    static_dns = preferences.getString("staticDNS");
-  }
-  if (preferences.getString("cueHost").length() > 0) {
-    cuesystem_host = preferences.getString("cueHost");
-  }
-  if (preferences.isKey("cuePort")) {
-    cuesystem_port = preferences.getInt("cuePort", 4000);
-  }
-  if (preferences.isKey("cueChan")) {
-    cuesystem_channel = preferences.getInt("cueChan", 1);
-  }
-  if (preferences.getString("nmosHost").length() > 0) {
-    nmos_registry_host = preferences.getString("nmosHost");
-  }
-  if (preferences.isKey("nmosPort")) {
-    nmos_registry_port = preferences.getInt("nmosPort", 8235);
-  }
-  if (preferences.getString("nmosSrc").length() > 0) {
-    nmos_source_id = preferences.getString("nmosSrc");
-  }
-  if (preferences.getString("nmosTopic").length() > 0) {
-    nmos_event_topic = preferences.getString("nmosTopic");
-  }
-  if (preferences.getString("pairGroup").length() > 0) {
-    pairingGroup = preferences.getString("pairGroup");
-  }
-  if (preferences.getString("pairIP").length() > 0) {
-    pairedTargetIP = preferences.getString("pairIP");
-  }
-  if (preferences.getString("pairName").length() > 0) {
-    pairedTargetName = preferences.getString("pairName");
-  }
-  if (preferences.getString("taHost").length() > 0) {
-    preferences.getString("taHost").toCharArray(tallyarbiter_host, 40);
-  }
-  if (preferences.getString("taPort").length() > 0) {
-    preferences.getString("taPort").toCharArray(tallyarbiter_port, 6);
-  }
-  if (preferences.getString("taTSLPort").length() > 0) {
-    preferences.getString("taTSLPort").toCharArray(tallyarbiter_TSLport, 6);
-  }
-  if (preferences.getString("taListenerName").length() > 0) {
-    listenerDeviceName = preferences.getString("taListenerName");
-  }
+  if (preferences.getString("deviceid").length() > 0) DeviceId = preferences.getString("deviceid");
+  if (preferences.getString("devicename").length() > 0) DeviceName = preferences.getString("devicename");
+  if (preferences.getString("opMode").length() > 0) operatingMode = preferences.getString("opMode");
+  if (preferences.isKey("useDHCP")) useDHCP = preferences.getBool("useDHCP", true);
+  if (preferences.getString("staticIP").length() > 0) static_ip = preferences.getString("staticIP");
+  if (preferences.getString("staticMask").length() > 0) static_mask = preferences.getString("staticMask");
+  if (preferences.getString("staticGW").length() > 0) static_gw = preferences.getString("staticGW");
+  if (preferences.getString("staticDNS").length() > 0) static_dns = preferences.getString("staticDNS");
+  if (preferences.getString("cueHost").length() > 0) cuesystem_host = preferences.getString("cueHost");
+  if (preferences.isKey("cuePort")) cuesystem_port = preferences.getInt("cuePort", 4000);
+  if (preferences.isKey("cueChan")) cuesystem_channel = preferences.getInt("cueChan", 1);
+  if (preferences.getString("nmosHost").length() > 0) nmos_registry_host = preferences.getString("nmosHost");
+  if (preferences.isKey("nmosPort")) nmos_registry_port = preferences.getInt("nmosPort", 8235);
+  if (preferences.getString("nmosSrc").length() > 0) nmos_source_id = preferences.getString("nmosSrc");
+  if (preferences.getString("nmosPrg").length() > 0) nmos_program_topic = preferences.getString("nmosPrg");
+  if (preferences.getString("nmosPvw").length() > 0) nmos_preview_topic = preferences.getString("nmosPvw");
+  if (preferences.getString("nmosAux").length() > 0) nmos_aux_topic = preferences.getString("nmosAux");
+  if (preferences.isKey("midiPort")) rtpmidi_port = preferences.getInt("midiPort", 5004);
+  if (preferences.isKey("midiChan")) rtpmidi_channel = preferences.getInt("midiChan", 1);
+  if (preferences.isKey("midiTrig")) rtpmidi_trigger_type = preferences.getInt("midiTrig", 0);
+  if (preferences.isKey("midiRed")) rtpmidi_num_red = preferences.getInt("midiRed", 60);
+  if (preferences.isKey("midiFlash")) rtpmidi_num_flash_red = preferences.getInt("midiFlash", 61);
+  if (preferences.isKey("midiGreen")) rtpmidi_num_green = preferences.getInt("midiGreen", 62);
+  if (preferences.isKey("midiYellow")) rtpmidi_num_yellow = preferences.getInt("midiYellow", 63);
+  if (preferences.isKey("midiBlue")) rtpmidi_num_blue = preferences.getInt("midiBlue", 64);
+  if (preferences.isKey("midiWhite")) rtpmidi_num_white = preferences.getInt("midiWhite", 65);
+  if (preferences.isKey("oscPort")) osc_port = preferences.getInt("oscPort", 8000);
+  if (preferences.getString("oscPrefix").length() > 0) osc_prefix = preferences.getString("oscPrefix");
+  if (preferences.getString("oscMsg").length() > 0) osc_custom_message = preferences.getString("oscMsg");
+  if (preferences.getString("pairGroup").length() > 0) pairingGroup = preferences.getString("pairGroup");
+  if (preferences.getString("pairIP").length() > 0) pairedTargetIP = preferences.getString("pairIP");
+  if (preferences.getString("pairName").length() > 0) pairedTargetName = preferences.getString("pairName");
+  if (preferences.getString("taHost").length() > 0) preferences.getString("taHost").toCharArray(tallyarbiter_host, 40);
+  if (preferences.getString("taPort").length() > 0) preferences.getString("taPort").toCharArray(tallyarbiter_port, 6);
+  if (preferences.getString("taTSLPort").length() > 0) preferences.getString("taTSLPort").toCharArray(tallyarbiter_TSLport, 6);
+  if (preferences.getString("taListenerName").length() > 0) listenerDeviceName = preferences.getString("taListenerName");
   preferences.end();
 
   // Create unique listener name using MAC
@@ -1403,7 +1903,13 @@ void setup() {
       case ARDUINO_EVENT_ETH_GOT_IP:
         logger(String("[ETH] IP Assigned (") + (useDHCP ? "DHCP" : "Static") + "): " + ETH.localIP().toString(), "info");
         networkConnected = true;
-        udp.begin(isETCCueSystem() ? cuesystem_port : atoi(tallyarbiter_TSLport));
+        {
+          uint16_t listenPort = atoi(tallyarbiter_TSLport);
+          if (isETCCueSystem()) listenPort = cuesystem_port;
+          else if (isRTPMidi()) listenPort = rtpmidi_port;
+          else if (isOSC()) listenPort = osc_port;
+          udp.begin(listenPort);
+        }
         if (usesTallyArbiter()) {
           connectToServer();
         }
@@ -1430,7 +1936,6 @@ void setup() {
   });
 
   // 2. Explicitly initialize SPI and W5500 for AtomS3R + AtomPoE
-  // Apply static IP or DHCP configuration to Ethernet stack
   logger("[ETH] Initializing W5500 SPI (SCK:5, CS:6, MISO:7, MOSI:8)...", "info");
   SPI.begin(ETH_PHY_SPI_SCK, ETH_PHY_SPI_MISO, ETH_PHY_SPI_MOSI, ETH_PHY_CS);
   applyNetworkIPConfig();
@@ -1441,13 +1946,16 @@ void setup() {
   }
 
   // 3. Setup MycilaESPConnect Network Manager
-  // Listens to network state transitions for Wi-Fi fallback & Captive Portal
   espConnect.listen([](Mycila::ESPConnect::State previous, Mycila::ESPConnect::State current) {
     logger(String("[Network] State: ") + String((int)previous) + " -> " + String((int)current), "info");
     if (current == Mycila::ESPConnect::State::NETWORK_CONNECTED) {
       networkConnected = true;
       logger("[Network] Connected! IP: " + getNetworkIPStr(), "info");
-      udp.begin(isETCCueSystem() ? cuesystem_port : atoi(tallyarbiter_TSLport));
+      uint16_t listenPort = atoi(tallyarbiter_TSLport);
+      if (isETCCueSystem()) listenPort = cuesystem_port;
+      else if (isRTPMidi()) listenPort = rtpmidi_port;
+      else if (isOSC()) listenPort = osc_port;
+      udp.begin(listenPort);
       if (usesTallyArbiter()) {
         connectToServer();
       }
@@ -1481,20 +1989,19 @@ void setup() {
   if (MDNS.begin(mdnsdotlocalurl.c_str())) {
     MDNS.addService("CueLX", "tcp", 80);
     MDNS.addService("http", "tcp", 80);
-    MDNS.addService("cuelx-tally", "udp", isETCCueSystem() ? cuesystem_port : atoi(tallyarbiter_TSLport));
-    MDNS.addServiceTxt("cuelx-tally", "udp", "role", isPresenter() ? "presenter" : (isTP() ? "tp" : (isETCCueSystem() ? "cue" : "nmos")));
+    uint16_t mDnsPort = isETCCueSystem() ? cuesystem_port : (isRTPMidi() ? rtpmidi_port : (isOSC() ? osc_port : atoi(tallyarbiter_TSLport)));
+    MDNS.addService("cuelx-tally", "udp", mDnsPort);
+    MDNS.addServiceTxt("cuelx-tally", "udp", "role", isPresenter() ? "presenter" : (isTP() ? "tp" : (isETCCueSystem() ? "cue" : (isRTPMidi() ? "midi" : (isOSC() ? "osc" : "nmos")))));
     MDNS.addServiceTxt("cuelx-tally", "udp", "mode", operatingMode.c_str());
     MDNS.addServiceTxt("cuelx-tally", "udp", "group", pairingGroup.c_str());
     MDNS.addServiceTxt("cuelx-tally", "udp", "name", listenerDeviceName.c_str());
-    logger(String("[mDNS] Service _cuelx-tally._udp registered. Mode: ") + operatingMode + ", Name: " + listenerDeviceName, "info");
+    logger(String("[mDNS] Service _cuelx-tally._udp registered on port ") + String(mDnsPort), "info");
   }
 
   // Initial Screen Render
   renderScreen();
 
   // 6. Start Socket.IO background task pinned to Core 0 (PRO_CPU)
-  // Isolating socket.loop() to Core 0 guarantees that TCP handshake timeouts
-  // when Tally Arbiter is offline will NEVER block Core 1 (UI, clock, button, UDP tally).
   xTaskCreatePinnedToCore(
     socketTask,
     "socketTask",
@@ -1514,7 +2021,7 @@ void loop() {
   espConnect.loop();
   ArduinoOTA.handle();
 
-  // 1. Process incoming packets with sub-millisecond latency (TSL 3.1 UDP, ETC CueSystem, NMOS IS-07)
+  // 1. Process incoming packets with sub-millisecond latency (TSL 3.1 UDP, ETC, NMOS, rtpMIDI, OSC)
   processIncomingTSL();
 
   // 2. Handle flash effect if requested by Tally Arbiter
@@ -1538,29 +2045,96 @@ void loop() {
     renderScreen();
   }
 
-  // 3. Button Handling on AtomS3R Screen Button
+  // 3. IMU Screen Auto-Rotation (Requirement 6)
+  static unsigned long lastIMUCheck = 0;
+  if (millis() - lastIMUCheck >= 100) {
+    lastIMUCheck = millis();
+    float ax = 0, ay = 0, az = 0;
+    if (M5.Imu.isEnabled()) {
+      M5.Imu.getAccel(&ax, &ay, &az);
+      uint8_t targetRot = currentRotation;
+      if (ay < -0.6) targetRot = 0;        // Upright (ports at bottom)
+      else if (ay > 0.6) targetRot = 2;   // Inverted (ports at top)
+      else if (ax > 0.6) targetRot = 1;   // Rotated 90 deg right
+      else if (ax < -0.6) targetRot = 3;  // Rotated 90 deg left
+
+      if (targetRot != currentRotation) {
+        if (pendingRotation != targetRot) {
+          pendingRotation = targetRot;
+          pendingRotTime = millis();
+        } else if (millis() - pendingRotTime >= 250) { // 250ms debounce
+          currentRotation = targetRot;
+          M5.Display.setRotation(currentRotation);
+          canvas.setRotation(currentRotation);
+          logger(String("[IMU] Screen auto-rotated to ") + String(currentRotation * 90) + " degrees", "info");
+          renderScreen();
+        }
+      } else {
+        pendingRotation = currentRotation;
+      }
+    }
+  }
+
+  // 4. Smooth Flashing (ETC Standby, rtpMIDI/OSC Flash Red) & OSC text ticker
+  static unsigned long lastFlashTickerTime = 0;
+  bool isFlashing = (isETCCueSystem() && actualType == "\"standby\"" && !cuesystem_ack_active) ||
+                    (actualType == "\"flashred\"");
+  bool isTicker = (isOSC() && osc_custom_message.length() > 9);
+
+  if (isFlashing) {
+    if (millis() - lastFlashTickerTime >= 200) {
+      lastFlashTickerTime = millis();
+      renderScreen();
+    }
+  } else if (isTicker) {
+    if (millis() - lastFlashTickerTime >= 35) {
+      lastFlashTickerTime = millis();
+      renderScreen();
+    }
+  }
+
+  // 5. Button Handling on AtomS3R Screen Button
   // Single click: Mode-aware action
   if (M5.BtnA.wasClicked()) {
     if (isETCCueSystem()) {
-      logger(String("[Button] CueSystem Acknowledge button pressed for CH ") + String(cuesystem_channel), "info");
-      cuesystem_ack_active = !cuesystem_ack_active;
+      logger(String("[Button] CueSystem Acknowledge pressed for CH ") + String(cuesystem_channel), "info");
+      cuesystem_ack_active = true;
       if (networkConnected) {
         sendCueAck();
       }
+      renderScreen();
     } else if (isNMOSIS07()) {
       logger("[Button] NMOS IS-07 Tally toggle pressed", "info");
-      nmos_is_on_air = !nmos_is_on_air;
-      if (networkConnected) {
-        sendNMOSTally(nmos_is_on_air);
+      nmos_program_active = !nmos_program_active;
+      if (nmos_program_active) {
+        actualType = "\"program\"";
+        actualColor = "#FF0000";
+      } else {
+        actualType = "";
+        actualColor = "";
       }
+      if (networkConnected) {
+        sendNMOSTally(nmos_program_active);
+      }
+      renderScreen();
+    } else if (isRTPMidi()) {
+      logger("[Button] rtpMIDI Test Toggle pressed", "info");
+      midi_active_red = !midi_active_red;
+      evaluateRTPMidiState();
+      renderScreen();
+    } else if (isOSC()) {
+      logger("[Button] OSC Test Toggle pressed", "info");
+      osc_active_red = !osc_active_red;
+      evaluateOSCState();
+      renderScreen();
     } else {
       logger(String("[Button] Single Click: Toggle Cue CH1 (") + (isPresenter() ? "Presenter Preview" : "TP Program") + ")", "info");
       ch1state = !ch1state;
       if (networkConnected) {
         sendtally(1, ch1state);
       }
+      renderScreen();
     }
-    renderScreen();
   }
 
   // Double click: Switch screen
@@ -1590,7 +2164,7 @@ void loop() {
     ESP.restart();
   }
 
-  // 4. Smooth 1-Second Clock & State Rollover Detection
+  // 6. Smooth 1-Second Clock & State Rollover Detection
   time_t currentEpoch;
   time(&currentEpoch);
   static time_t lastEpoch = 0;

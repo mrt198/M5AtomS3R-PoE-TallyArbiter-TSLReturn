@@ -61,7 +61,41 @@ export default function App() {
     nmosPort: 8235,
     nmosSource: 'm5atoms3r-tally-source-01',
     nmosTopic: 'device/tally/state',
+    nmosProgramTopic: 'tally/program',
+    nmosPreviewTopic: 'tally/preview',
+    nmosAuxTopic: 'tally/aux',
     nmosOnAir: false,
+    nmosPreview: false,
+    nmosAux: false,
+    rtpMidiPort: 5004,
+    rtpMidiChannel: 1,
+    rtpMidiTriggerType: 0,
+    rtpMidiNumRed: 60,
+    rtpMidiNumFlashRed: 61,
+    rtpMidiNumGreen: 62,
+    rtpMidiNumYellow: 63,
+    rtpMidiNumBlue: 64,
+    rtpMidiNumWhite: 65,
+    rtpMidiState: {
+      red: false,
+      flashRed: false,
+      green: false,
+      yellow: false,
+      blue: false,
+      white: false
+    },
+    oscPort: 8000,
+    oscPrefix: '/cuelight',
+    oscCustomMessage: '',
+    oscState: {
+      red: false,
+      flashRed: false,
+      green: false,
+      yellow: false,
+      blue: false,
+      white: false
+    },
+    imuRotation: 0
   });
 
   // Track simulated UDP transmission
@@ -84,7 +118,7 @@ export default function App() {
     const timeStr = now.toTimeString().split(' ')[0];
 
     if (simState.operatingMode === 'ETC_CueSystem') {
-      const payload = `CS,${simState.cueChannel},ACK\\n`;
+      const payload = `CS,${simState.cueChannel},ACK\n`;
       const hex = Array.from(payload).map(c => c.charCodeAt(0).toString(16).padStart(2, '0').toUpperCase()).join(' ');
       setLastTslPacket({
         hex,
@@ -97,11 +131,36 @@ export default function App() {
     }
 
     if (simState.operatingMode === 'NMOS_IS07') {
-      const payload = `{"topic":"${simState.nmosTopic}","payload":{"value":${live}}}`;
+      const payload = `{"topic":"${simState.nmosProgramTopic}","payload":{"value":${live}}}`;
       const hex = Array.from(payload).slice(0, 18).map(c => c.charCodeAt(0).toString(16).padStart(2, '0').toUpperCase()).join(' ');
       setLastTslPacket({
         hex,
         decoded: `NMOS IS-07 Event: ${payload} -> ${simState.nmosHost}:${simState.nmosPort}`,
+        timestamp: timeStr,
+        channel: 1,
+        live
+      });
+      return;
+    }
+
+    if (simState.operatingMode === 'RTP_MIDI') {
+      const hex = `90 ${simState.rtpMidiNumRed.toString(16).toUpperCase()} ${live ? '7F' : '00'}`;
+      setLastTslPacket({
+        hex,
+        decoded: `rtpMIDI AppleMIDI (UDP ${simState.rtpMidiPort}) Ch:${simState.rtpMidiChannel} ${live ? 'NoteOn' : 'NoteOff'} Note:${simState.rtpMidiNumRed} Vel:${live ? 127 : 0}`,
+        timestamp: timeStr,
+        channel: 1,
+        live
+      });
+      return;
+    }
+
+    if (simState.operatingMode === 'OSC') {
+      const addr = `${simState.oscPrefix}/red`;
+      const hex = Array.from(addr).map(c => c.charCodeAt(0).toString(16).padStart(2, '0').toUpperCase()).join(' ');
+      setLastTslPacket({
+        hex: `${hex} 2C 69 00 00 ${live ? '01' : '00'}`,
+        decoded: `OSC UDP (Port ${simState.oscPort}): ${addr} [i: ${live ? 1 : 0}]`,
         timestamp: timeStr,
         channel: 1,
         live

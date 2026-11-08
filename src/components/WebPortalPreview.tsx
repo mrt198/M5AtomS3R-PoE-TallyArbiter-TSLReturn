@@ -11,7 +11,10 @@ import {
   Server,
   Sliders,
   Theater,
-  Tv
+  Tv,
+  Music,
+  Volume2,
+  MessageSquare
 } from 'lucide-react';
 import { SimulatorState } from './AtomSimulator';
 
@@ -22,7 +25,7 @@ interface WebPortalPreviewProps {
 
 interface DiscoveredPeer {
   name: string;
-  role: 'presenter' | 'tp' | 'cue' | 'nmos';
+  role: 'presenter' | 'tp' | 'cue' | 'nmos' | 'rtpmidi' | 'osc';
   ip: string;
   port: number;
   group: string;
@@ -55,7 +58,25 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
   const [formNmosHost, setFormNmosHost] = useState(state.nmosHost);
   const [formNmosPort, setFormNmosPort] = useState(state.nmosPort);
   const [formNmosSource, setFormNmosSource] = useState(state.nmosSource);
-  const [formNmosTopic, setFormNmosTopic] = useState(state.nmosTopic);
+  const [formNmosProgramTopic, setFormNmosProgramTopic] = useState(state.nmosProgramTopic);
+  const [formNmosPreviewTopic, setFormNmosPreviewTopic] = useState(state.nmosPreviewTopic);
+  const [formNmosAuxTopic, setFormNmosAuxTopic] = useState(state.nmosAuxTopic);
+
+  // rtpMIDI
+  const [formRtpPort, setFormRtpPort] = useState(state.rtpMidiPort);
+  const [formRtpChannel, setFormRtpChannel] = useState(state.rtpMidiChannel);
+  const [formRtpTriggerType, setFormRtpTriggerType] = useState(state.rtpMidiTriggerType);
+  const [formRtpNumRed, setFormRtpNumRed] = useState(state.rtpMidiNumRed);
+  const [formRtpNumFlashRed, setFormRtpNumFlashRed] = useState(state.rtpMidiNumFlashRed);
+  const [formRtpNumGreen, setFormRtpNumGreen] = useState(state.rtpMidiNumGreen);
+  const [formRtpNumYellow, setFormRtpNumYellow] = useState(state.rtpMidiNumYellow);
+  const [formRtpNumBlue, setFormRtpNumBlue] = useState(state.rtpMidiNumBlue);
+  const [formRtpNumWhite, setFormRtpNumWhite] = useState(state.rtpMidiNumWhite);
+
+  // OSC
+  const [formOscPort, setFormOscPort] = useState(state.oscPort);
+  const [formOscPrefix, setFormOscPrefix] = useState(state.oscPrefix);
+  const [formOscMessage, setFormOscMessage] = useState(state.oscCustomMessage);
 
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
@@ -84,7 +105,21 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
       nmosHost: formNmosHost,
       nmosPort: formNmosPort,
       nmosSource: formNmosSource,
-      nmosTopic: formNmosTopic
+      nmosProgramTopic: formNmosProgramTopic,
+      nmosPreviewTopic: formNmosPreviewTopic,
+      nmosAuxTopic: formNmosAuxTopic,
+      rtpMidiPort: formRtpPort,
+      rtpMidiChannel: formRtpChannel,
+      rtpMidiTriggerType: formRtpTriggerType,
+      rtpMidiNumRed: formRtpNumRed,
+      rtpMidiNumFlashRed: formRtpNumFlashRed,
+      rtpMidiNumGreen: formRtpNumGreen,
+      rtpMidiNumYellow: formRtpNumYellow,
+      rtpMidiNumBlue: formRtpNumBlue,
+      rtpMidiNumWhite: formRtpNumWhite,
+      oscPort: formOscPort,
+      oscPrefix: formOscPrefix,
+      oscCustomMessage: formOscMessage
     }));
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 2500);
@@ -171,11 +206,11 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
           <div className="bg-neutral-800/80 border border-neutral-700/60 rounded-xl p-5 shadow-md">
             <div className="flex items-start justify-between">
               <div>
-                <h1 className="text-lg font-bold text-sky-400">M5AtomS3R PoE Tally & Cue</h1>
-                <p className="text-xs text-neutral-400">TSL 3.1 UDP, ETC CueSystem, NMOS IS-07 & P2P Controller</p>
+                <h1 className="text-lg font-bold text-sky-400">M5AtomS3R PoE Universal Cue &amp; Tally</h1>
+                <p className="text-xs text-neutral-400">TSL 3.1 UDP, ETC CueSystem, NMOS IS-07, rtpMIDI, OSC &amp; P2P Controller</p>
               </div>
               <span className="px-2.5 py-1 rounded-full text-xs font-mono font-bold bg-blue-950 text-blue-300 border border-blue-800">
-                Firmware v2.4-MultiMode
+                Firmware v2.5-Universal
               </span>
             </div>
 
@@ -186,6 +221,8 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
                 <span className="text-neutral-400 text-[10px] block">
                   {state.operatingMode === 'ETC_CueSystem' && 'Stage Outstation'}
                   {state.operatingMode === 'NMOS_IS07' && 'SMPTE ST 2110 Tally'}
+                  {state.operatingMode === 'RTP_MIDI' && 'AppleMIDI 6-Color'}
+                  {state.operatingMode === 'OSC' && 'OSC UDP + Ticker'}
                   {state.operatingMode === 'Presenter' && 'Preview Return (0x31)'}
                   {state.operatingMode === 'TP' && 'Program Return (0x32)'}
                   {state.operatingMode === 'Presenter_P2P' && 'P2P Preview Return'}
@@ -202,18 +239,18 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
               </div>
 
               <div className="p-2.5 bg-neutral-900 rounded-lg border border-neutral-800">
-                <span className="text-neutral-500 block text-[10px]">INTERFACE & POWER:</span>
+                <span className="text-neutral-500 block text-[10px]">INTERFACE &amp; SENSORS:</span>
                 <span className="text-emerald-400 font-bold text-sm flex items-center gap-1.5">
                   <Network className="w-3.5 h-3.5" />
                   {state.networkMode === 'ETH' ? 'PoE Ethernet' : 'Wi-Fi (STA)'}
                 </span>
-                <span className="text-neutral-400 text-[10px] block">802.3af PoE (48V)</span>
+                <span className="text-neutral-400 text-[10px] block">6-Axis IMU: {state.imuRotation}°</span>
               </div>
             </div>
 
             <div className="mt-3 flex items-center justify-between text-xs text-neutral-400 pt-2 border-t border-neutral-700/50">
               <span>Double Buffering: <strong className="text-purple-400">Enabled (32KB Canvas)</strong></span>
-              <span>Hardware: <strong className="text-neutral-200">ESP32-S3 + W5500 SPI</strong></span>
+              <span>Hardware: <strong className="text-neutral-200">ESP32-S3 + W5500 SPI + IMU</strong></span>
             </div>
           </div>
 
@@ -221,7 +258,7 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
           <div className="bg-neutral-800/80 border border-neutral-700/60 rounded-xl p-5 shadow-md">
             <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-4 flex items-center gap-2">
               <Sliders className="w-4 h-4 text-sky-400" />
-              <span>Operating Mode & Routing Parameters</span>
+              <span>Operating Mode &amp; Protocol Parameters</span>
             </h2>
 
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -240,15 +277,19 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
                   <option value="TP_P2P">TP no Tally Arbiter (P2P Master)</option>
                   <option value="Presenter_P2P">Presenter no Tally Arbiter (P2P Slave)</option>
                   <option value="ETC_CueSystem">ETC CueSystem (Stage Cue Light Outstation)</option>
-                  <option value="NMOS_IS07">NMOS IS-07 Event & Tally (SMPTE ST 2110)</option>
+                  <option value="NMOS_IS07">NMOS IS-07 Event &amp; Tally (SMPTE ST 2110)</option>
+                  <option value="RTP_MIDI">rtpMIDI / AppleMIDI Outstation (6 Colors with Priority)</option>
+                  <option value="OSC">OSC (Open Sound Control with Scrolling Text Ticker)</option>
                 </select>
                 <p className="text-[11px] text-neutral-400 mt-1">
                   {formMode === 'Presenter' && 'Button click transmits Green TSL Preview cue (0x31) back to Tally Arbiter.'}
                   {formMode === 'TP' && 'Button click transmits Red TSL Program tally (0x32) back to Tally Arbiter.'}
                   {formMode === 'TP_P2P' && 'Direct P2P Master: Toggles Program to paired Presenter; receives cue calls from Presenter.'}
                   {formMode === 'Presenter_P2P' && 'Direct P2P Slave: Displays TP Program/Preview tally; button press cues paired TP.'}
-                  {formMode === 'ETC_CueSystem' && 'Stage cue light outstation: Listens for Standby (Amber) and Go (Green); button sends ACK.'}
-                  {formMode === 'NMOS_IS07' && 'AMWA NMOS IS-07: Emits state events to NMOS IS-04 Registration Server over ST 2110.'}
+                  {formMode === 'ETC_CueSystem' && 'Stage cue light outstation: Standby flashes Red; button press confirms ACK (solid Red); Go displays Green.'}
+                  {formMode === 'NMOS_IS07' && 'AMWA NMOS IS-07: Emits state events for Program, Preview and Aux endpoints over ST 2110.'}
+                  {formMode === 'RTP_MIDI' && 'AppleMIDI / rtpMIDI on UDP 5004. Priority: Red > Flashing Red > Green > Yellow > Blue > White.'}
+                  {formMode === 'OSC' && 'Open Sound Control on UDP 8000. Supports 6 tally colors plus custom scrolling text ticker.'}
                 </p>
               </div>
 
@@ -501,7 +542,7 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
                 <div className="p-4 bg-neutral-900/90 rounded-xl border border-cyan-900/50 space-y-3">
                   <h3 className="text-xs font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
                     <Tv className="w-3.5 h-3.5" />
-                    <span>AMWA NMOS IS-07 Event & Tally Configuration</span>
+                    <span>AMWA NMOS IS-07 Event &amp; Tally Endpoints</span>
                   </h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
@@ -529,31 +570,219 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
                       />
                     </div>
                   </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                      Source / Device UUID
+                    </label>
+                    <input
+                      type="text"
+                      value={formNmosSource}
+                      onChange={(e) => setFormNmosSource(e.target.value)}
+                      placeholder="urn:uuid:7c9e6679-7425-4094-8f92-d6c1b35b62b1"
+                      className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-sky-500"
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-neutral-800">
+                    <div>
+                      <label className="block text-[10px] font-medium text-red-400 mb-1">
+                        Program Topic (Red)
+                      </label>
+                      <input
+                        type="text"
+                        value={formNmosProgramTopic}
+                        onChange={(e) => setFormNmosProgramTopic(e.target.value)}
+                        placeholder="tally/program"
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded px-2.5 py-1.5 text-xs font-mono text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-medium text-emerald-400 mb-1">
+                        Preview Topic (Green)
+                      </label>
+                      <input
+                        type="text"
+                        value={formNmosPreviewTopic}
+                        onChange={(e) => setFormNmosPreviewTopic(e.target.value)}
+                        placeholder="tally/preview"
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded px-2.5 py-1.5 text-xs font-mono text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-medium text-amber-400 mb-1">
+                        Aux Topic (Amber)
+                      </label>
+                      <input
+                        type="text"
+                        value={formNmosAuxTopic}
+                        onChange={(e) => setFormNmosAuxTopic(e.target.value)}
+                        placeholder="tally/aux"
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded px-2.5 py-1.5 text-xs font-mono text-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* MODE AWARE SECTION: rtpMIDI */}
+              {formMode === 'RTP_MIDI' && (
+                <div className="p-4 bg-neutral-900/90 rounded-xl border border-indigo-900/50 space-y-3">
+                  <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Music className="w-3.5 h-3.5" />
+                    <span>rtpMIDI / AppleMIDI Configuration</span>
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                        RTP-MIDI UDP Port
+                      </label>
+                      <input
+                        type="number"
+                        value={formRtpPort}
+                        onChange={(e) => setFormRtpPort(parseInt(e.target.value) || 5004)}
+                        placeholder="5004"
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                        MIDI Channel (1-16, 0=Omni)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={16}
+                        value={formRtpChannel}
+                        onChange={(e) => setFormRtpChannel(parseInt(e.target.value) || 0)}
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                        Trigger Type
+                      </label>
+                      <select
+                        value={formRtpTriggerType}
+                        onChange={(e) => setFormRtpTriggerType(parseInt(e.target.value) || 0)}
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white"
+                      >
+                        <option value={0}>Note On / Off</option>
+                        <option value={1}>Control Change (CC)</option>
+                        <option value={2}>Program Change (PC)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-neutral-800">
+                    <div className="text-[10px] text-neutral-400 font-mono mb-2">
+                      Assign Note / Controller Numbers (Priority Order: Red &gt; Flash Red &gt; Green &gt; Yellow &gt; Blue &gt; White):
+                    </div>
+                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-xs font-mono">
+                      <div>
+                        <label className="block text-[10px] text-red-400 mb-0.5">1: Red</label>
+                        <input
+                          type="number"
+                          value={formRtpNumRed}
+                          onChange={(e) => setFormRtpNumRed(parseInt(e.target.value) || 60)}
+                          className="w-full bg-neutral-950 border border-neutral-700 rounded px-2 py-1 text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-red-400 mb-0.5">2: Flash Red</label>
+                        <input
+                          type="number"
+                          value={formRtpNumFlashRed}
+                          onChange={(e) => setFormRtpNumFlashRed(parseInt(e.target.value) || 61)}
+                          className="w-full bg-neutral-950 border border-neutral-700 rounded px-2 py-1 text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-emerald-400 mb-0.5">3: Green</label>
+                        <input
+                          type="number"
+                          value={formRtpNumGreen}
+                          onChange={(e) => setFormRtpNumGreen(parseInt(e.target.value) || 62)}
+                          className="w-full bg-neutral-950 border border-neutral-700 rounded px-2 py-1 text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-yellow-400 mb-0.5">4: Yellow</label>
+                        <input
+                          type="number"
+                          value={formRtpNumYellow}
+                          onChange={(e) => setFormRtpNumYellow(parseInt(e.target.value) || 63)}
+                          className="w-full bg-neutral-950 border border-neutral-700 rounded px-2 py-1 text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-blue-400 mb-0.5">5: Blue</label>
+                        <input
+                          type="number"
+                          value={formRtpNumBlue}
+                          onChange={(e) => setFormRtpNumBlue(parseInt(e.target.value) || 64)}
+                          className="w-full bg-neutral-950 border border-neutral-700 rounded px-2 py-1 text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-neutral-300 mb-0.5">6: White</label>
+                        <input
+                          type="number"
+                          value={formRtpNumWhite}
+                          onChange={(e) => setFormRtpNumWhite(parseInt(e.target.value) || 65)}
+                          className="w-full bg-neutral-950 border border-neutral-700 rounded px-2 py-1 text-white"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* MODE AWARE SECTION: OSC */}
+              {formMode === 'OSC' && (
+                <div className="p-4 bg-neutral-900/90 rounded-xl border border-teal-900/50 space-y-3">
+                  <h3 className="text-xs font-bold text-teal-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Volume2 className="w-3.5 h-3.5" />
+                    <span>OSC (Open Sound Control) Settings</span>
+                  </h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-[11px] font-medium text-neutral-400 mb-1">
-                        Source / Device UUID
+                        OSC UDP Port
                       </label>
                       <input
-                        type="text"
-                        value={formNmosSource}
-                        onChange={(e) => setFormNmosSource(e.target.value)}
-                        placeholder="m5atoms3r-tally-source-01"
-                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-sky-500"
+                        type="number"
+                        value={formOscPort}
+                        onChange={(e) => setFormOscPort(parseInt(e.target.value) || 8000)}
+                        placeholder="8000"
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white"
                       />
                     </div>
                     <div>
                       <label className="block text-[11px] font-medium text-neutral-400 mb-1">
-                        IS-07 Event Topic
+                        Address Prefix
                       </label>
                       <input
                         type="text"
-                        value={formNmosTopic}
-                        onChange={(e) => setFormNmosTopic(e.target.value)}
-                        placeholder="device/tally/state"
-                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-sky-500"
+                        value={formOscPrefix}
+                        onChange={(e) => setFormOscPrefix(e.target.value)}
+                        placeholder="/cuelight"
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white"
                       />
                     </div>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                      Custom Screen Message / Ticker Text
+                    </label>
+                    <input
+                      type="text"
+                      value={formOscMessage}
+                      onChange={(e) => setFormOscMessage(e.target.value)}
+                      placeholder="e.g. RECORDING - STUDIO 1 (Smooth horizontal scroll if > 9 characters)"
+                      className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white"
+                    />
+                    <p className="text-[10px] text-neutral-400 mt-1">
+                      Received dynamically via OSC address <code>{formOscPrefix}/text &quot;message&quot;</code> or <code>/message &quot;text&quot;</code>.
+                    </p>
                   </div>
                 </div>
               )}
@@ -563,7 +792,7 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
                 className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg text-sm flex items-center justify-center gap-2 transition-colors shadow-lg shadow-blue-900/40 cursor-pointer"
               >
                 <Save className="w-4 h-4" />
-                <span>Save Settings & Apply to Firmware</span>
+                <span>Save Settings &amp; Apply to Firmware</span>
               </button>
 
               {savedSuccess && (

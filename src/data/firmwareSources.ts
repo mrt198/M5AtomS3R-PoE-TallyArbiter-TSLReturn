@@ -175,28 +175,123 @@ int count = MDNS.queryService("cuelx-tally", "udp");`,
     explanation: 'Point-to-Point (P2P) mode allows Presenter and TP units to discover and pair directly over mDNS / DNS-SD without needing Tally Arbiter. Group tags (e.g. Studio-1, Studio-2) isolate multiple pairs on the same subnet.'
   },
   {
-    category: 'ETC CueSystem Theatrical Stage Cue Protocol',
-    original: `// Legacy: Broadcast video tally only (no stage cueing support)`,
-    adapted: `// AtomS3R: ETC CueSystem Outstation Protocol
-// Standby (Amber) and Go (Green) commands received from master hub:
-// CS,<channel>,STANDBY  -> Amber Display
-// CS,<channel>,GO       -> Green Display
-// Button press sends stage performer acknowledgment:
-udp.beginPacket(cuesystem_host, cuesystem_port);
-udp.write("CS,1,ACK\\n");
-udp.endPacket();`,
-    explanation: 'Direct compatibility with ETC CueSystem hubs used in opera houses and theatres. The AtomS3R functions as a networked stage cue light outstation with performer acknowledgment return.'
+    category: 'ETC CueSystem Flashing Standby & Performer Acknowledgment',
+    original: `// Legacy: Static standby indicator without performer return ack
+case CUE_STANDBY:
+  fillScreen(TFT_AMBER);
+  break;`,
+    adapted: `// AtomS3R: Flashing Red Standby -> Solid Red on Acknowledgment
+if (actualType == "\"standby\"") {
+  if (!cuesystem_ack_active) {
+    bgColor = ((millis() / 400) % 2 == 0) ? TFT_RED : TFT_BLACK; // Flashes Red
+    statusLabel = "STANDBY";
+  } else {
+    bgColor = TFT_RED; // Solid Red once acknowledged
+    statusLabel = "ACKNOWLEDGED";
+  }
+}
+// Button press transmits CS,<channel>,ACK\\n back to stage hub:
+void sendCueAck() {
+  cuesystem_ack_active = true;
+  udp.beginPacket(cuesystem_host.c_str(), cuesystem_port);
+  udp.print("CS," + String(cuesystem_channel) + ",ACK\\n");
+  udp.endPacket();
+}`,
+    explanation: 'Opera houses and theatres require the cue light to flash red when the stage manager calls Standby, transitioning immediately to solid red when the performer acknowledges. Pressing the AtomS3R screen button transmits the acknowledgment packet back to the ETC hub.'
   },
   {
-    category: 'AMWA NMOS IS-07 Event & Tally (SMPTE ST 2110)',
-    original: `// Legacy: Proprietary WebSocket or legacy TSL 3.1 only`,
-    adapted: `// AtomS3R: NMOS IS-07 Event & Tally integration
-// JSON state event payload registered with IS-04 node:
-{
-  "source_id": "m5atoms3r-tally-01",
-  "topic": "device/tally/state",
-  "payload": { "value": true }
+    category: 'Diagnostics Page Background Follows Tally State',
+    original: `// Legacy: Diagnostics page was strictly static black
+if (currentScreen == 1) {
+  g->fillScreen(TFT_BLACK);
+  g->setTextColor(TFT_WHITE);
+  // Display was disconnected from active tally state
 }`,
-    explanation: 'AMWA NMOS IS-07 provides open-standard IP tally and GPI events for SMPTE ST 2110 broadcast infrastructures, with IS-04 Registration & Discovery Server support.'
+    adapted: `// AtomS3R: Diagnostics page dynamically mirrors active tally color
+void renderScreen() {
+  uint16_t bgColor = TFT_BLACK;
+  uint16_t textColor = TFT_WHITE;
+  // Compute bgColor from Tally Arbiter, TSL, ETC, NMOS, rtpMIDI, or OSC
+  ...
+  if (currentScreen == 1) {
+    g->fillScreen(bgColor); // Whole diagnostics page follows tally!
+    // Text rendered with high contrast against active tally color
+    g->setTextColor(textColor, bgColor);
+  }
+}`,
+    explanation: 'Operators and engineers checking network diagnostics, IP configurations, or pairing status on Screen 1 can still immediately see live tally changes (Red, Green, Amber, Blue, White, or Flashing) because the diagnostics background tracks the active tally engine in real time.'
+  },
+  {
+    category: 'AMWA NMOS IS-07 Multi-Endpoint Tally (Program, Preview, Aux)',
+    original: `// Legacy: Single binary tally event endpoint
+String nmos_topic = "device/tally/state";`,
+    adapted: `// AtomS3R: Three independent endpoints with strict broadcast priority
+String nmos_program_topic = "tally/program"; // Red (Priority 1)
+String nmos_preview_topic = "tally/preview"; // Green (Priority 2)
+String nmos_aux_topic     = "tally/aux";     // Amber (Priority 3)
+
+// Incoming state evaluation:
+if (nmos_program_active) actualType = "\"program\"";
+else if (nmos_preview_active) actualType = "\"preview\"";
+else if (nmos_aux_active) actualType = "\"aux\"";`,
+    explanation: 'Broadcast SMPTE ST 2110 facilities require independent monitoring of Program, Preview, and Aux tally buses from NMOS IS-04/IS-07 message streams with deterministic priority arbitration.'
+  },
+  {
+    category: 'rtpMIDI / AppleMIDI 6-Color Priority Engine',
+    original: `// Legacy: No MIDI support (broadcast video protocols only)`,
+    adapted: `// AtomS3R: rtpMIDI UDP 5004 with 6-level priority arbitration
+// Supports Note On/Off, Control Change (CC), and Program Change (PC):
+// Priority order: Red > Flashing Red > Green > Yellow > Blue > White
+void evaluateRTPMidiState() {
+  if (midi_active_red) actualType = "\"program\"";         // Priority 1
+  else if (midi_active_flash_red) actualType = "\"flashred\""; // Priority 2
+  else if (midi_active_green) actualType = "\"preview\"";     // Priority 3
+  else if (midi_active_yellow) actualType = "\"yellow\"";     // Priority 4
+  else if (midi_active_blue) actualType = "\"blue\"";         // Priority 5
+  else if (midi_active_white) actualType = "\"white\"";       // Priority 6
+}`,
+    explanation: 'Enables audio engineers, DAW operators (Logic, Pro Tools, QLab), and live sound desks to drive studio cue lights over AppleMIDI / rtpMIDI network sessions with standard Note, CC, or PC triggers.'
+  },
+  {
+    category: 'OSC (Open Sound Control) & Scrolling Text Ticker',
+    original: `// Legacy: Fixed 16-character static text from TSL 3.1
+g->drawString(DeviceName, 64, 46); // Clips if text exceeds screen width`,
+    adapted: `// AtomS3R: OSC UDP 8000 + Smooth Horizontal Scrolling Marquee
+// Handles /cuelight/red, /flashred, /green, /yellow, /blue, /white, & /text
+if (isOSC() && osc_custom_message.length() > 0) displayName = osc_custom_message;
+
+int textWidth = g->textWidth(displayName.c_str());
+if (textWidth > 116) {
+  // Smooth ticker animation (28 px/sec) without buffer reallocation:
+  int scrollRange = textWidth + 128;
+  int offset = (millis() / 35) % scrollRange;
+  g->drawString(displayName, 120 - offset, 46);
+} else {
+  g->drawCenterString(displayName, 64, 46);
+}`,
+    explanation: 'Receives OSC messages (e.g. from QLab, ETC Eos, Reaper, or custom controllers) on UDP 8000. When custom message text is sent via /cuelight/text, strings longer than 116px scroll continuously ticker-tape style across the 128x128 display.'
+  },
+  {
+    category: 'Internal 6-Axis IMU Screen Auto-Orientation',
+    original: `// Legacy: Fixed hardware orientation (0 degrees only)
+M5.Display.setRotation(0); // Upside down if mounted inverted on camera rigs`,
+    adapted: `// AtomS3R: 6-Axis IMU (MPU6886 / BMI270) Auto-Rotation
+float ax, ay, az;
+M5.Imu.getAccel(&ax, &ay, &az);
+uint8_t targetRot = currentRotation;
+if (ay > 0.6f)       targetRot = 0; // Upright
+else if (ax > 0.6f)  targetRot = 1; // Rotated Right 90°
+else if (ay < -0.6f) targetRot = 2; // Inverted 180°
+else if (ax < -0.6f) targetRot = 3; // Rotated Left 270°
+
+// Debounce 250ms before flipping hardware scanout & M5Canvas sprite:
+if (targetRot != currentRotation) {
+  currentRotation = targetRot;
+  M5.Display.setRotation(currentRotation);
+  canvas.setRotation(currentRotation);
+  renderScreen();
+}`,
+    explanation: 'Camera operators often clamp tally lights upside-down or sideways onto camera cages or teleprompters. The AtomS3R internal IMU automatically detects tilt and re-orients both the hardware display scanout and M5Canvas sprite buffer with zero PSRAM reallocation.'
   }
 ];
+
