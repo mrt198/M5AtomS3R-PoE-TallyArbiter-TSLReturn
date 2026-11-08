@@ -32,7 +32,7 @@ export interface SimulatorState {
   taPort: string;
   tslPort: string;
   flashActive: boolean;
-  operatingMode: 'TP' | 'Presenter' | 'TP_P2P' | 'Presenter_P2P' | 'ETC_CueSystem' | 'NMOS_IS07' | 'RTP_MIDI' | 'OSC';
+  operatingMode: 'TP' | 'Presenter' | 'TP_P2P' | 'Presenter_P2P' | 'ETC_CueSystem' | 'NMOS_IS07' | 'RTP_MIDI' | 'OSC' | 'TSL_31' | 'TSL_50' | 'OSC_CueLight';
   pairingGroup: string;
   pairedTargetIP: string;
   pairedTargetName: string;
@@ -43,6 +43,27 @@ export interface SimulatorState {
   staticMask: string;
   staticGW: string;
   staticDNS: string;
+  wifiDisabledForEth: boolean;
+  // NMOS Auto Discovery
+  nmosAutoDiscover: boolean;
+  // TSL 3.1 Dedicated Listener (Item 2)
+  tsl31Port: number;
+  tsl31Transport: 'UDP' | 'TCP';
+  tsl31Address: number;
+  tsl31Name: string;
+  // TSL 5.0 Dedicated Listener (Item 5)
+  tsl50Port: number;
+  tsl50Transport: 'UDP' | 'TCP';
+  tsl50Screen: number;
+  tsl50Index: number;
+  tsl50Name: string;
+  // OSC Cue Light for iOS (Item 6: RSMCK Protocol)
+  oscCuePort: number;
+  oscCueStation: string;
+  oscCueBanner: string;
+  oscCueMessage: string;
+  oscCueState: 'off' | 'standby_ack' | 'standby' | 'go';
+  oscCueAckDone: boolean;
   // ETC CueSystem configuration & state
   cueHost: string;
   cuePort: number;
@@ -236,7 +257,27 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
       return { bg: 'bg-neutral-950', text: 'text-white', isDark: true, label: 'OFF' };
     }
 
-    // 5. Standard TSL / Tally Arbiter / P2P Modes
+    // 4.5 OSC Cue Light for iOS (Item 6: RSMCK Protocol)
+    if (state.operatingMode === 'OSC_CueLight') {
+      if (state.oscCueState === 'standby_ack') {
+        if (!state.oscCueAckDone) {
+          return flashTick
+            ? { bg: 'bg-red-600', text: 'text-white', isDark: true, label: 'STANDBY (ACK)' }
+            : { bg: 'bg-neutral-950', text: 'text-red-500', isDark: true, label: 'STANDBY (ACK)' };
+        } else {
+          return { bg: 'bg-red-600', text: 'text-white', isDark: true, label: 'STANDBY' };
+        }
+      }
+      if (state.oscCueState === 'standby') {
+        return { bg: 'bg-red-600', text: 'text-white', isDark: true, label: 'STANDBY' };
+      }
+      if (state.oscCueState === 'go') {
+        return { bg: 'bg-emerald-500', text: 'text-black', isDark: false, label: 'GO!' };
+      }
+      return { bg: 'bg-neutral-950', text: 'text-white', isDark: true, label: 'OFF' };
+    }
+
+    // 5. Standard TSL / Tally Arbiter / P2P / TSL 3.1 & 5.0 Listener Modes
     switch (state.tallyState) {
       case 'program':
         return { bg: 'bg-red-600', text: 'text-white', isDark: true, label: 'PROGRAM' };
@@ -299,6 +340,10 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
             const nextAck = !prev.cueAckActive;
             return { ...prev, cueAckActive: nextAck };
           }
+          if (prev.operatingMode === 'OSC_CueLight') {
+            onSendTslPacket(parseInt(prev.oscCueStation) || 1, true);
+            return { ...prev, oscCueAckDone: true };
+          }
           if (prev.operatingMode === 'NMOS_IS07') {
             const nextLive = !prev.nmosOnAir;
             return { ...prev, nmosOnAir: nextLive };
@@ -333,6 +378,15 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
 
   // Determine displayed name on screen
   const getDisplayName = () => {
+    if (state.operatingMode === 'TSL_31') {
+      return state.tsl31Name || 'CAM 1';
+    }
+    if (state.operatingMode === 'TSL_50') {
+      return state.tsl50Name || 'STUDIO A';
+    }
+    if (state.operatingMode === 'OSC_CueLight') {
+      return state.oscCueMessage || (state.oscCueState === 'go' ? 'GO!' : state.oscCueState.startsWith('standby') ? 'STANDBY' : 'OFF');
+    }
     if (state.operatingMode === 'OSC' && state.oscCustomMessage.trim().length > 0) {
       return state.oscCustomMessage.trim();
     }
@@ -420,16 +474,34 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                   {state.currentScreen === 0 ? (
                     // Screen 0: Tally & Cue
                     <div className="w-full h-full p-2 flex flex-col justify-between text-left font-mono">
-                      {/* Clock: Larger font with seconds in black box with white text, ABOVE Device Name */}
-                      <div className="w-full bg-black text-white border border-neutral-700/80 rounded py-1 px-1 text-center shadow-md">
-                        <div className="text-xs sm:text-sm font-mono font-bold tracking-widest leading-none text-white">
-                          {currentTime}
+                      {/* Top Header: For OSC Cue Light show persistent Banner; else show Clock */}
+                      {state.operatingMode === 'OSC_CueLight' ? (
+                        <div className="w-full bg-black text-cyan-400 border border-neutral-700/80 rounded py-0.5 px-1 text-center shadow-md">
+                          <div className="text-[11px] font-mono font-bold tracking-wider leading-tight uppercase truncate">
+                            {state.oscCueBanner || 'CUE LIGHT'}
+                          </div>
                         </div>
-                      </div>
+                      ) : (
+                        <div className="w-full bg-black text-white border border-neutral-700/80 rounded py-1 px-1 text-center shadow-md">
+                          <div className="text-xs sm:text-sm font-mono font-bold tracking-widest leading-none text-white">
+                            {currentTime}
+                          </div>
+                        </div>
+                      )}
 
-                      {/* Main Device Name / OSC Message / Channel directly below clock */}
+                      {/* Main Device Name / Source Name / OSC Message / Station */}
                       <div className="text-center py-0.5 my-auto w-full overflow-hidden">
-                        {isTextLong ? (
+                        {(state.operatingMode === 'TSL_31' || state.operatingMode === 'TSL_50') ? (
+                          // Requirements 2 & 5: Dedicated centered prominent name display
+                          <div className="my-1">
+                            <div className="text-base font-black tracking-widest uppercase leading-tight truncate px-1 drop-shadow-md text-center">
+                              {displayName}
+                            </div>
+                            <div className="text-[8px] font-mono opacity-75 mt-0.5">
+                              {state.operatingMode === 'TSL_31' ? `TSL 3.1 [Addr ${state.tsl31Address || 'All'}]` : `TSL 5.0 [Idx ${state.tsl50Index || 'All'}]`}
+                            </div>
+                          </div>
+                        ) : isTextLong ? (
                           // Ticker horizontal scroll animation for long text
                           <div className="w-full overflow-hidden whitespace-nowrap py-0.5">
                             <div className="inline-block animate-marquee font-black text-sm uppercase tracking-wider drop-shadow-sm px-1">
@@ -449,6 +521,11 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                             [ACKNOWLEDGED]
                           </div>
                         )}
+                        {state.operatingMode === 'OSC_CueLight' && state.oscCueState === 'standby_ack' && state.oscCueAckDone && (
+                          <div className="mt-0.5 text-[8px] font-bold uppercase tracking-wider bg-black text-emerald-400 border border-emerald-500 rounded px-1 py-0.2">
+                            [ACKNOWLEDGED]
+                          </div>
+                        )}
                       </div>
 
                       {/* Bottom Status: Mode Badge, Cue & Peer / TA */}
@@ -463,6 +540,9 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                             {state.operatingMode === 'NMOS_IS07' && '[NMOS-07]'}
                             {state.operatingMode === 'RTP_MIDI' && '[rtpMIDI]'}
                             {state.operatingMode === 'OSC' && '[OSC UDP]'}
+                            {state.operatingMode === 'TSL_31' && `[TSL3.1 ${state.tsl31Transport}]`}
+                            {state.operatingMode === 'TSL_50' && `[TSL5.0 ${state.tsl50Transport}]`}
+                            {state.operatingMode === 'OSC_CueLight' && '[OSC CUE-LX]'}
                           </span>
                           <span className="opacity-90 font-normal">
                             {state.operatingMode === 'ETC_CueSystem'
@@ -473,6 +553,12 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                               ? `Port ${state.rtpMidiPort}`
                               : state.operatingMode === 'OSC'
                               ? `Port ${state.oscPort}`
+                              : state.operatingMode === 'TSL_31'
+                              ? `Port ${state.tsl31Port}`
+                              : state.operatingMode === 'TSL_50'
+                              ? `Port ${state.tsl50Port}`
+                              : state.operatingMode === 'OSC_CueLight'
+                              ? `ID: ${state.oscCueStation}`
                               : state.operatingMode.includes('P2P')
                               ? `Grp: ${state.pairingGroup.slice(0, 6)}`
                               : (state.networkMode === 'ETH' ? 'TA: ONLINE' : 'TA: OFFLINE')}
@@ -489,6 +575,10 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                               ? 'MIDI Trig:'
                               : state.operatingMode === 'OSC'
                               ? 'OSC Prefix:'
+                              : state.operatingMode === 'TSL_31' || state.operatingMode === 'TSL_50'
+                              ? 'Transport:'
+                              : state.operatingMode === 'OSC_CueLight'
+                              ? 'Cue State:'
                               : (state.operatingMode === 'Presenter' || state.operatingMode === 'Presenter_P2P')
                               ? 'Cue(PVW):'
                               : 'Return(PRG):'}
@@ -498,6 +588,8 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                               ? (state.cueAckActive ? 'bg-emerald-950 text-emerald-300 border border-emerald-500' : 'opacity-70')
                               : state.operatingMode === 'NMOS_IS07'
                               ? (state.nmosOnAir ? 'bg-red-950 text-red-200 border border-red-500' : state.nmosPreview ? 'bg-emerald-950 text-emerald-200 border border-emerald-500' : 'opacity-70')
+                              : state.operatingMode === 'OSC_CueLight'
+                              ? (state.oscCueState === 'go' ? 'bg-emerald-950 text-emerald-300 border border-emerald-500' : state.oscCueState.startsWith('standby') ? 'bg-red-950 text-red-200 border border-red-500' : 'opacity-70')
                               : (state.isCueActive 
                                   ? (state.operatingMode === 'Presenter' || state.operatingMode === 'Presenter_P2P'
                                       ? 'bg-emerald-950 text-emerald-300 border border-emerald-500' 
@@ -512,6 +604,12 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                               ? (state.rtpMidiTriggerType === 0 ? 'NOTE ON' : state.rtpMidiTriggerType === 1 ? 'CC TRIG' : 'PC TRIG')
                               : state.operatingMode === 'OSC'
                               ? state.oscPrefix
+                              : state.operatingMode === 'TSL_31'
+                              ? `${state.tsl31Transport} :${state.tsl31Port}`
+                              : state.operatingMode === 'TSL_50'
+                              ? `${state.tsl50Transport} :${state.tsl50Port}`
+                              : state.operatingMode === 'OSC_CueLight'
+                              ? state.oscCueState.toUpperCase()
                               : (state.isCueActive ? '● ACTIVE' : 'OFF')}
                           </span>
                         </div>
@@ -547,6 +645,7 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                         }`}>
                           <div>Mode: <span className="font-bold underline">{state.operatingMode}</span></div>
                           <div>IP: <span className="font-bold">{displayedIP}</span> ({state.useDHCP ? 'DHCP' : 'Static'})</div>
+                          <div>Wi-Fi: <span className={state.ethernetCableConnected ? 'text-amber-400 font-bold' : 'text-emerald-400'}>{state.ethernetCableConnected ? 'Disabled (PoE Precedence)' : 'Active STA'}</span></div>
                           <div>IMU Rot: <span className="font-bold">{state.imuRotation}°</span></div>
 
                           {state.operatingMode === 'ETC_CueSystem' ? (
@@ -557,7 +656,7 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                             </>
                           ) : state.operatingMode === 'NMOS_IS07' ? (
                             <>
-                              <div>Registry: <span>{state.nmosHost}:{state.nmosPort}</span></div>
+                              <div>Registry: <span>{state.nmosAutoDiscover ? 'DNS-SD (_nmos-registration)' : `${state.nmosHost}:${state.nmosPort}`}</span></div>
                               <div>PRG: <span>{state.nmosOnAir ? 'ON' : 'off'}</span> | PVW: <span>{state.nmosPreview ? 'ON' : 'off'}</span></div>
                               <div>AUX: <span>{state.nmosAux ? 'ON' : 'off'}</span></div>
                             </>
@@ -572,6 +671,24 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                               <div>OSC Port: <span>{state.oscPort}</span></div>
                               <div>Prefix: <span>{state.oscPrefix}</span></div>
                               <div>Msg: <span className="truncate">{state.oscCustomMessage || 'None'}</span></div>
+                            </>
+                          ) : state.operatingMode === 'TSL_31' ? (
+                            <>
+                              <div>TSL 3.1: <span>{state.tsl31Transport} Port {state.tsl31Port}</span></div>
+                              <div>Filter Addr: <span>{state.tsl31Address === 0 ? 'Any (0)' : state.tsl31Address}</span></div>
+                              <div>Name: <span className="font-bold">{state.tsl31Name}</span></div>
+                            </>
+                          ) : state.operatingMode === 'TSL_50' ? (
+                            <>
+                              <div>TSL 5.0: <span>{state.tsl50Transport} Port {state.tsl50Port}</span></div>
+                              <div>Screen: <span>{state.tsl50Screen}</span> | Index: <span>{state.tsl50Index === 0 ? 'Any (0)' : state.tsl50Index}</span></div>
+                              <div>Name: <span className="font-bold">{state.tsl50Name}</span></div>
+                            </>
+                          ) : state.operatingMode === 'OSC_CueLight' ? (
+                            <>
+                              <div>CueLX UDP: <span>Port {state.oscCuePort}</span></div>
+                              <div>Station: <span>{state.oscCueStation}</span> | State: <span className="font-bold">{state.oscCueState.toUpperCase()}</span></div>
+                              <div>Banner: <span className="truncate">{state.oscCueBanner}</span></div>
                             </>
                           ) : (
                             <>
@@ -805,6 +922,57 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
               </div>
               <p className="text-[10.5px] text-neutral-400 mt-0.5">Scrolling Text Ticker</p>
             </button>
+
+            {/* Item 2: TSL 3.1 Dedicated Listener */}
+            <button
+              type="button"
+              onClick={() => setState(prev => ({ ...prev, operatingMode: 'TSL_31' }))}
+              className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                state.operatingMode === 'TSL_31'
+                  ? 'bg-blue-950/60 text-white border-blue-400 shadow-md shadow-blue-950/50'
+                  : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-neutral-700'
+              }`}
+            >
+              <div className="font-bold text-xs font-mono text-blue-400 flex items-center gap-1">
+                <Radio className="w-3.5 h-3.5" />
+                <span>TSL 3.1 Listener</span>
+              </div>
+              <p className="text-[10.5px] text-neutral-400 mt-0.5">UDP/TCP, Centered Name</p>
+            </button>
+
+            {/* Item 5: TSL 5.0 Dedicated Listener */}
+            <button
+              type="button"
+              onClick={() => setState(prev => ({ ...prev, operatingMode: 'TSL_50' }))}
+              className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                state.operatingMode === 'TSL_50'
+                  ? 'bg-violet-950/60 text-white border-violet-400 shadow-md shadow-violet-950/50'
+                  : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-neutral-700'
+              }`}
+            >
+              <div className="font-bold text-xs font-mono text-violet-400 flex items-center gap-1">
+                <Radio className="w-3.5 h-3.5" />
+                <span>TSL 5.0 Listener</span>
+              </div>
+              <p className="text-[10.5px] text-neutral-400 mt-0.5">UDP/TCP 4-Tally Binary</p>
+            </button>
+
+            {/* Item 6: OSC Cue Light for iOS (RSMCK Protocol) */}
+            <button
+              type="button"
+              onClick={() => setState(prev => ({ ...prev, operatingMode: 'OSC_CueLight', oscCueAckDone: false }))}
+              className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                state.operatingMode === 'OSC_CueLight'
+                  ? 'bg-rose-950/60 text-white border-rose-500 shadow-md shadow-rose-950/50'
+                  : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-neutral-700'
+              }`}
+            >
+              <div className="font-bold text-xs font-mono text-rose-400 flex items-center gap-1">
+                <Theater className="w-3.5 h-3.5" />
+                <span>OSC Cue Light</span>
+              </div>
+              <p className="text-[10.5px] text-neutral-400 mt-0.5">RSMCK iOS Protocol</p>
+            </button>
           </div>
 
           {/* Mode-Specific Interactive Controls */}
@@ -818,7 +986,7 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                 <span className="text-[11px] font-mono text-neutral-400">Channel: {state.cueChannel}</span>
               </div>
               <p className="text-xs text-neutral-400">
-                <strong>New Feature:</strong> Standby flashes red until performer clicks screen or hub receives ACK to turn solid red.
+                <strong>Feature:</strong> Standby flashes red until performer clicks screen or hub receives ACK to turn solid red.
               </p>
               <div className="flex flex-wrap gap-2.5">
                 <button
@@ -841,7 +1009,7 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                       : 'bg-neutral-800 text-neutral-300 border-neutral-700 hover:border-red-500'
                   }`}
                 >
-                  Performer ACK (Solid Red)
+                  Performer Screen ACK (Solid Red)
                 </button>
                 <button
                   type="button"
@@ -870,10 +1038,23 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                   <Tv className="w-4 h-4" />
                   <span>NMOS IS-07 Event &amp; Tally Endpoints (SMPTE ST 2110)</span>
                 </span>
-                <span className="text-[11px] font-mono text-neutral-400">Registry: {state.nmosHost}:{state.nmosPort}</span>
+                <span className="text-[11px] font-mono text-neutral-400">
+                  {state.nmosAutoDiscover ? 'Discovery: DNS-SD (_nmos-registration)' : `Manual: ${state.nmosHost}:${state.nmosPort}`}
+                </span>
+              </div>
+              <div className="flex items-center gap-3 p-2 bg-neutral-900 rounded-lg border border-neutral-800">
+                <label className="text-xs font-mono text-cyan-300 font-semibold flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={state.nmosAutoDiscover}
+                    onChange={(e) => setState(prev => ({ ...prev, nmosAutoDiscover: e.target.checked }))}
+                    className="rounded border-neutral-700 text-cyan-500 focus:ring-0"
+                  />
+                  <span>Discover NMOS Registration Server Automatically via DNS-SD (_nmos-registration._tcp)</span>
+                </label>
               </div>
               <p className="text-xs text-neutral-400">
-                <strong>New Feature:</strong> Independent endpoints for <strong>Program</strong> (Red), <strong>Preview</strong> (Green), and <strong>Aux</strong> (Amber) with priority:
+                Independent endpoints for <strong>Program</strong> (Red), <strong>Preview</strong> (Green), and <strong>Aux</strong> (Amber) with priority:
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                 <button
@@ -916,6 +1097,250 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                   <div className="font-bold text-amber-400">Aux Endpoint</div>
                   <div className="text-[10px] text-neutral-400 mt-0.5">{state.nmosAuxTopic}</div>
                   <div className="mt-1 font-bold">{state.nmosAux ? '● ACTIVE (Amber)' : 'Inactive'}</div>
+                </button>
+              </div>
+            </div>
+          ) : state.operatingMode === 'TSL_31' ? (
+            <div className="p-4 bg-neutral-950 rounded-xl border border-blue-900/40 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <Radio className="w-4 h-4" />
+                  <span>TSL 3.1 Dedicated Listener Mode</span>
+                </span>
+                <span className="text-[11px] font-mono text-neutral-400">{state.tsl31Transport} Port: {state.tsl31Port}</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-mono">
+                <div>
+                  <label className="text-[10px] text-neutral-400 block mb-1">TRANSPORT:</label>
+                  <select
+                    value={state.tsl31Transport}
+                    onChange={(e) => setState(prev => ({ ...prev, tsl31Transport: e.target.value as 'UDP' | 'TCP' }))}
+                    className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-white text-xs"
+                  >
+                    <option value="UDP">UDP Broadcast/Unicast</option>
+                    <option value="TCP">TCP Stream Server</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] text-neutral-400 block mb-1">PORT:</label>
+                  <input
+                    type="number"
+                    value={state.tsl31Port}
+                    onChange={(e) => setState(prev => ({ ...prev, tsl31Port: parseInt(e.target.value) || 8910 }))}
+                    className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-white text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-neutral-400 block mb-1">CENTER DISPLAY NAME:</label>
+                  <input
+                    type="text"
+                    value={state.tsl31Name}
+                    onChange={(e) => setState(prev => ({ ...prev, tsl31Name: e.target.value }))}
+                    className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-white font-bold text-xs"
+                    placeholder="e.g. CAM 1"
+                  />
+                </div>
+              </div>
+              <div className="pt-2 border-t border-neutral-800 flex flex-wrap gap-2 items-center">
+                <span className="text-[11px] font-mono text-neutral-400">Simulate TSL 3.1 Status:</span>
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, tallyState: 'program' }))}
+                  className={`px-2.5 py-1 rounded text-xs font-mono font-bold border ${state.tallyState === 'program' ? 'bg-red-600 text-white border-red-500' : 'bg-neutral-800 text-red-400 border-neutral-700'}`}
+                >
+                  PROGRAM (Red)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, tallyState: 'preview' }))}
+                  className={`px-2.5 py-1 rounded text-xs font-mono font-bold border ${state.tallyState === 'preview' ? 'bg-emerald-600 text-black border-emerald-500' : 'bg-neutral-800 text-emerald-400 border-neutral-700'}`}
+                >
+                  PREVIEW (Green)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, tallyState: 'aux' }))}
+                  className={`px-2.5 py-1 rounded text-xs font-mono font-bold border ${state.tallyState === 'aux' ? 'bg-amber-600 text-black border-amber-500' : 'bg-neutral-800 text-amber-400 border-neutral-700'}`}
+                >
+                  AUX (Amber)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, tallyState: 'standby' }))}
+                  className="px-2.5 py-1 rounded text-xs font-mono bg-neutral-800 text-neutral-400 border border-neutral-700 hover:text-white"
+                >
+                  OFF
+                </button>
+              </div>
+            </div>
+          ) : state.operatingMode === 'TSL_50' ? (
+            <div className="p-4 bg-neutral-950 rounded-xl border border-violet-900/40 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-violet-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <Radio className="w-4 h-4" />
+                  <span>TSL 5.0 Dedicated Listener Mode</span>
+                </span>
+                <span className="text-[11px] font-mono text-neutral-400">{state.tsl50Transport} Port: {state.tsl50Port}</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs font-mono">
+                <div>
+                  <label className="text-[10px] text-neutral-400 block mb-1">TRANSPORT:</label>
+                  <select
+                    value={state.tsl50Transport}
+                    onChange={(e) => setState(prev => ({ ...prev, tsl50Transport: e.target.value as 'UDP' | 'TCP' }))}
+                    className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-white text-xs"
+                  >
+                    <option value="UDP">UDP</option>
+                    <option value="TCP">TCP Stream</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] text-neutral-400 block mb-1">PORT:</label>
+                  <input
+                    type="number"
+                    value={state.tsl50Port}
+                    onChange={(e) => setState(prev => ({ ...prev, tsl50Port: parseInt(e.target.value) || 8900 }))}
+                    className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-white text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-neutral-400 block mb-1">INDEX FILTER:</label>
+                  <input
+                    type="number"
+                    value={state.tsl50Index}
+                    onChange={(e) => setState(prev => ({ ...prev, tsl50Index: parseInt(e.target.value) || 0 }))}
+                    className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-white text-xs"
+                    placeholder="0 = Any"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-neutral-400 block mb-1">CENTER DISPLAY NAME:</label>
+                  <input
+                    type="text"
+                    value={state.tsl50Name}
+                    onChange={(e) => setState(prev => ({ ...prev, tsl50Name: e.target.value }))}
+                    className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-white font-bold text-xs"
+                    placeholder="e.g. STUDIO A"
+                  />
+                </div>
+              </div>
+              <div className="pt-2 border-t border-neutral-800 flex flex-wrap gap-2 items-center">
+                <span className="text-[11px] font-mono text-neutral-400">Simulate TSL 5.0 Tallies:</span>
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, tallyState: 'program' }))}
+                  className={`px-2.5 py-1 rounded text-xs font-mono font-bold border ${state.tallyState === 'program' ? 'bg-red-600 text-white border-red-500' : 'bg-neutral-800 text-red-400 border-neutral-700'}`}
+                >
+                  Tally 1 (Red)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, tallyState: 'preview' }))}
+                  className={`px-2.5 py-1 rounded text-xs font-mono font-bold border ${state.tallyState === 'preview' ? 'bg-emerald-600 text-black border-emerald-500' : 'bg-neutral-800 text-emerald-400 border-neutral-700'}`}
+                >
+                  Tally 2 (Green)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, tallyState: 'aux' }))}
+                  className={`px-2.5 py-1 rounded text-xs font-mono font-bold border ${state.tallyState === 'aux' ? 'bg-amber-600 text-black border-amber-500' : 'bg-neutral-800 text-amber-400 border-neutral-700'}`}
+                >
+                  Tally 3 (Amber)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, tallyState: 'standby' }))}
+                  className="px-2.5 py-1 rounded text-xs font-mono bg-neutral-800 text-neutral-400 border border-neutral-700 hover:text-white"
+                >
+                  Tally OFF
+                </button>
+              </div>
+            </div>
+          ) : state.operatingMode === 'OSC_CueLight' ? (
+            <div className="p-4 bg-neutral-950 rounded-xl border border-rose-900/40 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <Theater className="w-4 h-4" />
+                  <span>OSC Cue Light (RSMCK Protocol - UDP Port {state.oscCuePort})</span>
+                </span>
+                <span className="text-[11px] font-mono text-neutral-400">Station ID: {state.oscCueStation}</span>
+              </div>
+              <p className="text-xs text-neutral-400">
+                Matches <code>/cuelight/{state.oscCueStation}/[command]</code>. Top banner remains persistent; <strong>STANDBY_ACK</strong> flashes until acknowledged by screen press, transmitting reply <code>/cuelight/state/{state.oscCueStation}/ack</code> back.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono">
+                <div>
+                  <label className="text-[10px] text-neutral-400 block mb-1">PERSISTENT TOP BANNER:</label>
+                  <input
+                    type="text"
+                    value={state.oscCueBanner}
+                    onChange={(e) => setState(prev => ({ ...prev, oscCueBanner: e.target.value }))}
+                    className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-white text-xs font-bold"
+                    placeholder="e.g. CUE LIGHT - STAGE LEFT"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-neutral-400 block mb-1">CUE MESSAGE TEXT:</label>
+                  <input
+                    type="text"
+                    value={state.oscCueMessage}
+                    onChange={(e) => setState(prev => ({ ...prev, oscCueMessage: e.target.value }))}
+                    className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-white text-xs"
+                    placeholder="e.g. ACT 2 READY (Optional)"
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2.5 pt-2 border-t border-neutral-800">
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, oscCueState: 'standby_ack', oscCueAckDone: false }))}
+                  className={`px-3 py-2 rounded-lg text-xs font-mono font-semibold border transition-all cursor-pointer ${
+                    state.oscCueState === 'standby_ack' && !state.oscCueAckDone
+                      ? 'bg-red-600 text-white border-red-400 font-bold animate-pulse'
+                      : 'bg-neutral-800 text-red-300 border-neutral-700 hover:border-red-500'
+                  }`}
+                >
+                  /standby_ack (Flashing Red)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, oscCueAckDone: true }))}
+                  className={`px-3 py-2 rounded-lg text-xs font-mono font-semibold border transition-all cursor-pointer ${
+                    state.oscCueAckDone && state.oscCueState === 'standby_ack'
+                      ? 'bg-red-600 text-white border-red-400 font-bold'
+                      : 'bg-neutral-800 text-neutral-300 border-neutral-700 hover:border-red-500'
+                  }`}
+                >
+                  Screen ACK Click (Solid Red)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, oscCueState: 'standby', oscCueAckDone: true }))}
+                  className={`px-3 py-2 rounded-lg text-xs font-mono font-semibold border transition-all cursor-pointer ${
+                    state.oscCueState === 'standby'
+                      ? 'bg-red-600 text-white border-red-400 font-bold'
+                      : 'bg-neutral-800 text-neutral-300 border-neutral-700 hover:border-red-500'
+                  }`}
+                >
+                  /standby (Solid Red)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, oscCueState: 'go' }))}
+                  className={`px-3 py-2 rounded-lg text-xs font-mono font-semibold border transition-all cursor-pointer ${
+                    state.oscCueState === 'go'
+                      ? 'bg-emerald-600 text-black border-emerald-400 font-bold'
+                      : 'bg-neutral-800 text-emerald-300 border-neutral-700 hover:border-emerald-500'
+                  }`}
+                >
+                  /go (Green)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, oscCueState: 'off', oscCueAckDone: false, oscCueMessage: '' }))}
+                  className="px-3 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-lg text-xs font-mono border border-neutral-700 cursor-pointer"
+                >
+                  /off (Clear)
                 </button>
               </div>
             </div>
@@ -1035,7 +1460,7 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
               </div>
             </div>
           ) : (
-            <div className="p-3.5 bg-neutral-950 rounded-xl border border-neutral-800 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-mono">
+            <div className="p-3.5 bg-neutral-950 rounded-xl border border-neutral-800 grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs font-mono">
               <div>
                 <span className="text-neutral-500 block text-[10px]">PAIRING GROUP (ISOLATION):</span>
                 <input 
@@ -1043,6 +1468,15 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                   value={state.pairingGroup}
                   onChange={(e) => setState(prev => ({ ...prev, pairingGroup: e.target.value }))}
                   className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-white font-bold mt-1 text-xs"
+                />
+              </div>
+              <div>
+                <span className="text-neutral-500 block text-[10px]">TSL RETURN PORT (ITEM 3):</span>
+                <input 
+                  type="text" 
+                  value={state.tslPort}
+                  onChange={(e) => setState(prev => ({ ...prev, tslPort: e.target.value }))}
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-cyan-400 font-bold mt-1 text-xs"
                 />
               </div>
               <div>

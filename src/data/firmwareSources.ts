@@ -292,6 +292,101 @@ if (targetRot != currentRotation) {
   renderScreen();
 }`,
     explanation: 'Camera operators often clamp tally lights upside-down or sideways onto camera cages or teleprompters. The AtomS3R internal IMU automatically detects tilt and re-orients both the hardware display scanout and M5Canvas sprite buffer with zero PSRAM reallocation.'
+  },
+  {
+    category: 'NMOS IS-04/IS-07 DNS-SD Auto-Discovery vs Manual',
+    original: `// Legacy: Hardcoded IP & manual registry port only
+String nmos_registry_host = "192.168.1.200";
+int nmos_registry_port = 8235;`,
+    adapted: `// AtomS3R: Zero-touch DNS-SD Discovery of _nmos-registration._tcp
+if (nmos_auto_discover) {
+  int n = MDNS.queryService("nmos-registration", "tcp");
+  if (n > 0) {
+    nmos_registry_host = MDNS.address(0).toString();
+    nmos_registry_port = MDNS.port(0);
+    Serial.printf("[NMOS] Discovered via DNS-SD: %s:%d\\n", nmos_registry_host.c_str(), nmos_registry_port);
+  }
+} else {
+  // Use saved manual NVS preferences host & port
+}`,
+    explanation: 'Broadcast facilities with AMWA NMOS registries advertise via DNS-SD (_nmos-registration._tcp or _nmos-register._tcp). The unit automatically detects the active registry or falls back to manual static IP/port configuration.'
+  },
+  {
+    category: 'TSL 3.1 Dedicated Listener with Centered Screen Name',
+    original: `// Legacy: TSL return packet sender only, no standalone TSL 3.1 UDP/TCP server`,
+    adapted: `// AtomS3R: Dedicated TSL 3.1 Server (UDP & AsyncTCP) with Centered Text
+void processTSL31Packet(uint8_t* data, size_t len) {
+  if (len < 18) return;
+  uint8_t addr = data[0] & 0x7F;
+  uint8_t ctrl = data[1];
+  char label[17] = {0};
+  memcpy(label, &data[2], 16);
+  // Parses Tally 1 (Red), Tally 2 (Green), Tally 3 (Amber), Tally 4 (Blue)
+  // Centers 16-char camera name directly on 128x128 GC9107 LCD
+}`,
+    explanation: 'Enables direct integration with vision mixers (Grass Valley, Sony, Ross Video, Blackmagic ATEM) sending standard TSL 3.1 UMD packets over UDP or TCP, displaying tally colors and centering the camera name on screen.'
+  },
+  {
+    category: 'Configurable TSL Return Port in Tally Arbiter Mode',
+    original: `// Legacy: Fixed port 8910 hardcoded in binary
+int tsl_port = 8910; // Inflexible if studio uses alternate UDP port`,
+    adapted: `// AtomS3R: Configurable TSL Port in Web Portal & NVS
+preferences.putInt("tslPort", tsl_port);
+// Bind UDP socket & direct return packets to user-specified port
+udpTSL.begin(tsl_port);`,
+    explanation: 'Allows multi-studio facilities to run multiple Tally Arbiter instances or custom TSL receivers on custom UDP ports without port collision.'
+  },
+  {
+    category: 'PoE Ethernet Priority (Wi-Fi Radio Disabling)',
+    original: `// Legacy: Dual-homed Ethernet and Wi-Fi causing duplicate IP & ARP conflicts
+ETH.begin(...);
+WiFi.begin(...);
+// Both interfaces active simultaneously with distinct IP addresses`,
+    adapted: `// AtomS3R: Dynamic PoE Precedence & Wi-Fi Power Down
+void checkEthernetWifiPrecedence() {
+  if (ETH.linkUp() && ETH.localIP() != IPAddress(0,0,0,0)) {
+    if (WiFi.getMode() != WIFI_OFF) {
+      WiFi.disconnect(true);
+      WiFi.mode(WIFI_OFF); // Power down 2.4GHz RF radio
+    }
+  } else if (!ETH.linkUp()) {
+    if (WiFi.getMode() == WIFI_OFF) {
+      WiFi.mode(WIFI_STA); // Fall back to wireless
+      WiFi.begin();
+    }
+  }
+}`,
+    explanation: 'When AtomPoE W5500 SPI link is connected and receives an IP, the 2.4GHz Wi-Fi radio is cleanly shut down. This eliminates dual-homed ARP conflicts, reduces RF noise, and ensures the unit has exactly one deterministic IP on the studio subnet.'
+  },
+  {
+    category: 'TSL 5.0 Dedicated Listener (UDP / TCP)',
+    original: `// Legacy: No TSL 5.0 protocol support`,
+    adapted: `// AtomS3R: TSL 5.0 Binary Protocol Parser with Screen & Index Filter
+struct TSL50Header {
+  uint16_t pbc;
+  uint8_t  ver;
+  uint8_t  flags;
+  uint16_t screen;
+  uint16_t index;
+};
+// Decodes 16-bit tally status flags (Tally 1..4, brightness, text length, UTF-16/ASCII)
+// Matches against configured screen & device index filter, centering name on LCD`,
+    explanation: 'Supports modern production routers and multiviewers (Evertz, Riedel, Lawo, Imagine Communications) communicating via TSL 5.0 binary protocol over UDP or TCP.'
+  },
+  {
+    category: 'RSMCK OSC Cue Light for iOS Protocol (Port 53000)',
+    original: `// Legacy: No cue light protocol matching iOS cue light apps`,
+    adapted: `// AtomS3R: RSMCK OSC Cue Light Protocol Handler on UDP 53000
+// Addresses:
+//   /cuelight/[station]/standby_ack -> Flashing Red, awaits button ACK
+//   /cuelight/[station]/standby     -> Solid Red
+//   /cuelight/[station]/go          -> Solid Green
+//   /cuelight/[station]/off         -> Black / Off
+//   /cuelight/[station]/banner      -> Displays persistent top banner text
+// Button single click sends:
+//   /cuelight/state/[station]/ack   -> Solid Red confirmed`,
+    explanation: 'Provides seamless zero-configuration compatibility with the widely used iOS OSC Cue Light app by RSMCK, supporting stage manager standby with performer acknowledgment, go cues, and banner messages.'
   }
 ];
+
 

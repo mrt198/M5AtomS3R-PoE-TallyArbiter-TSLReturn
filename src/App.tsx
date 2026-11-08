@@ -52,6 +52,23 @@ export default function App() {
     staticMask: '255.255.255.0',
     staticGW: '192.168.1.1',
     staticDNS: '8.8.8.8',
+    wifiDisabledForEth: false,
+    nmosAutoDiscover: true,
+    tsl31Port: 8910,
+    tsl31Transport: 'UDP',
+    tsl31Address: 0,
+    tsl31Name: 'CAM 1',
+    tsl50Port: 8900,
+    tsl50Transport: 'UDP',
+    tsl50Screen: 0,
+    tsl50Index: 0,
+    tsl50Name: 'STUDIO A',
+    oscCuePort: 53000,
+    oscCueStation: '1',
+    oscCueBanner: 'CUE LIGHT - STAGE LEFT',
+    oscCueMessage: '',
+    oscCueState: 'off',
+    oscCueAckDone: false,
     cueHost: '192.168.1.50',
     cuePort: 4000,
     cueChannel: 1,
@@ -116,6 +133,46 @@ export default function App() {
   const handleSendTslPacket = (channel: number, live: boolean) => {
     const now = new Date();
     const timeStr = now.toTimeString().split(' ')[0];
+
+    if (simState.operatingMode === 'TSL_31') {
+      const addrByte = (0x80 + (simState.tsl31Address & 0x7F)).toString(16).padStart(2, '0').toUpperCase();
+      const ctrlByte = (0x30 + (live ? 0x02 : 0x00)).toString(16).padStart(2, '0').toUpperCase();
+      const paddedName = (simState.tsl31Name || 'CAM 1').padEnd(16, ' ').slice(0, 16);
+      const nameHex = Array.from(paddedName).map(c => c.charCodeAt(0).toString(16).padStart(2, '0').toUpperCase()).join(' ');
+      setLastTslPacket({
+        hex: `${addrByte} ${ctrlByte} ${nameHex}`,
+        decoded: `TSL 3.1 (${simState.tsl31Transport} :${simState.tsl31Port}) Addr:${simState.tsl31Address} | Ctrl:${live ? 'Red (Tally 1)' : 'Off'} | Centered: "${paddedName.trim()}"`,
+        timestamp: timeStr,
+        channel: simState.tsl31Address,
+        live
+      });
+      return;
+    }
+
+    if (simState.operatingMode === 'TSL_50') {
+      const paddedName = (simState.tsl50Name || 'STUDIO A').padEnd(16, ' ').slice(0, 16);
+      setLastTslPacket({
+        hex: `00 00 00 00 00 01 00 00 ${live ? '00 01' : '00 00'} ...`,
+        decoded: `TSL 5.0 (${simState.tsl50Transport} :${simState.tsl50Port}) Screen:${simState.tsl50Screen} Index:${simState.tsl50Index} | Tally:${live ? 'Red' : 'Off'} | Centered: "${paddedName.trim()}"`,
+        timestamp: timeStr,
+        channel: simState.tsl50Index,
+        live
+      });
+      return;
+    }
+
+    if (simState.operatingMode === 'OSC_CueLight') {
+      const addr = `/cuelight/state/${simState.oscCueStation}/ack`;
+      const hex = Array.from(addr).map(c => c.charCodeAt(0).toString(16).padStart(2, '0').toUpperCase()).join(' ');
+      setLastTslPacket({
+        hex: `${hex} 2C 73 00 00 61 63 6B 00`,
+        decoded: `OSC Cue Light (UDP ${simState.oscCuePort}) RSMCK ACK: "${addr}" -> Station ${simState.oscCueStation}`,
+        timestamp: timeStr,
+        channel: parseInt(simState.oscCueStation) || 1,
+        live
+      });
+      return;
+    }
 
     if (simState.operatingMode === 'ETC_CueSystem') {
       const payload = `CS,${simState.cueChannel},ACK\n`;

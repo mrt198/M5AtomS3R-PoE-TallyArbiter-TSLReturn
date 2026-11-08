@@ -201,12 +201,32 @@ if (canvas.createSprite(128, 128) != nullptr) {
           </div>
 
           <div className="p-4 bg-neutral-950 rounded-xl border border-neutral-800">
-            <div className="text-emerald-400 font-bold mb-1 flex items-center justify-between">
-              <span>TSL 3.1 &amp; P2P Zero-Conf</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">UDP 8910</span>
+            <div className="text-blue-400 font-bold mb-1 flex items-center justify-between">
+              <span>TSL 3.1 &amp; 5.0 Dedicated Listener</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800">UDP &amp; TCP</span>
             </div>
             <p className="text-neutral-400 font-sans text-xs mt-1">
-              TSL 3.1 UDP tally listener with mDNS / DNS-SD discovery for standalone serverless pairing between Presenter and Technical Producer units.
+              Supports legacy TSL 3.1 UMD packets and modern TSL 5.0 binary packets over UDP or AsyncTCP with Screen &amp; Index filtering. Device name is centered prominently on the 128x128 screen.
+            </p>
+          </div>
+
+          <div className="p-4 bg-neutral-950 rounded-xl border border-neutral-800">
+            <div className="text-amber-400 font-bold mb-1 flex items-center justify-between">
+              <span>RSMCK OSC Cue Light (iOS)</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800">UDP 53000</span>
+            </div>
+            <p className="text-neutral-400 font-sans text-xs mt-1">
+              Drop-in integration with RSMCK iOS Cue Light app. Handles <code className="text-amber-300">/standby_ack</code> (flashing red), hardware button ACK confirmation (solid red), <code className="text-amber-300">/go</code>, <code className="text-amber-300">/off</code>, and persistent <code className="text-amber-300">/banner</code>.
+            </p>
+          </div>
+
+          <div className="p-4 bg-neutral-950 rounded-xl border border-neutral-800">
+            <div className="text-emerald-400 font-bold mb-1 flex items-center justify-between">
+              <span>PoE Precedence (Wi-Fi Disable)</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">W5500 SPI</span>
+            </div>
+            <p className="text-neutral-400 font-sans text-xs mt-1">
+              When PoE Ethernet link is established and acquires an IP, the 2.4GHz Wi-Fi radio is immediately shut down to prevent dual-homed ARP conflicts and duplicate IPs on studio production networks.
             </p>
           </div>
         </div>

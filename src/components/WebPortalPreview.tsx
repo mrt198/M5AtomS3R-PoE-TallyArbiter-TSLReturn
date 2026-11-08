@@ -55,12 +55,29 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
   const [formCueChannel, setFormCueChannel] = useState(state.cueChannel);
 
   // NMOS IS-07
+  const [formNmosAutoDisc, setFormNmosAutoDisc] = useState(state.nmosAutoDiscover);
   const [formNmosHost, setFormNmosHost] = useState(state.nmosHost);
   const [formNmosPort, setFormNmosPort] = useState(state.nmosPort);
   const [formNmosSource, setFormNmosSource] = useState(state.nmosSource);
   const [formNmosProgramTopic, setFormNmosProgramTopic] = useState(state.nmosProgramTopic);
   const [formNmosPreviewTopic, setFormNmosPreviewTopic] = useState(state.nmosPreviewTopic);
   const [formNmosAuxTopic, setFormNmosAuxTopic] = useState(state.nmosAuxTopic);
+
+  // TSL 3.1 Listener (Item 2)
+  const [formTsl31Port, setFormTsl31Port] = useState(state.tsl31Port);
+  const [formTsl31Transport, setFormTsl31Transport] = useState(state.tsl31Transport);
+  const [formTsl31Address, setFormTsl31Address] = useState(state.tsl31Address);
+
+  // TSL 5.0 Listener (Item 5)
+  const [formTsl50Port, setFormTsl50Port] = useState(state.tsl50Port);
+  const [formTsl50Transport, setFormTsl50Transport] = useState(state.tsl50Transport);
+  const [formTsl50Screen, setFormTsl50Screen] = useState(state.tsl50Screen);
+  const [formTsl50Index, setFormTsl50Index] = useState(state.tsl50Index);
+
+  // OSC Cue Light for iOS (Item 6: RSMCK Protocol)
+  const [formOscCuePort, setFormOscCuePort] = useState(state.oscCuePort);
+  const [formOscCueStation, setFormOscCueStation] = useState(state.oscCueStation);
+  const [formOscCueBanner, setFormOscCueBanner] = useState(state.oscCueBanner);
 
   // rtpMIDI
   const [formRtpPort, setFormRtpPort] = useState(state.rtpMidiPort);
@@ -102,12 +119,23 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
       cueHost: formCueHost,
       cuePort: formCuePort,
       cueChannel: formCueChannel,
+      nmosAutoDiscover: formNmosAutoDisc,
       nmosHost: formNmosHost,
       nmosPort: formNmosPort,
       nmosSource: formNmosSource,
       nmosProgramTopic: formNmosProgramTopic,
       nmosPreviewTopic: formNmosPreviewTopic,
       nmosAuxTopic: formNmosAuxTopic,
+      tsl31Port: formTsl31Port,
+      tsl31Transport: formTsl31Transport,
+      tsl31Address: formTsl31Address,
+      tsl50Port: formTsl50Port,
+      tsl50Transport: formTsl50Transport,
+      tsl50Screen: formTsl50Screen,
+      tsl50Index: formTsl50Index,
+      oscCuePort: formOscCuePort,
+      oscCueStation: formOscCueStation,
+      oscCueBanner: formOscCueBanner,
       rtpMidiPort: formRtpPort,
       rtpMidiChannel: formRtpChannel,
       rtpMidiTriggerType: formRtpTriggerType,
@@ -276,6 +304,9 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
                   <option value="Presenter">Presenter (with Tally Arbiter)</option>
                   <option value="TP_P2P">TP no Tally Arbiter (P2P Master)</option>
                   <option value="Presenter_P2P">Presenter no Tally Arbiter (P2P Slave)</option>
+                  <option value="TSL_31">TSL 3.1 Listener (UDP/TCP with centered name)</option>
+                  <option value="TSL_50">TSL 5.0 Listener (UDP/TCP with centered name)</option>
+                  <option value="OSC_CueLight">OSC Cue Light (RSMCK iOS Protocol - Port 53000)</option>
                   <option value="ETC_CueSystem">ETC CueSystem (Stage Cue Light Outstation)</option>
                   <option value="NMOS_IS07">NMOS IS-07 Event &amp; Tally (SMPTE ST 2110)</option>
                   <option value="RTP_MIDI">rtpMIDI / AppleMIDI Outstation (6 Colors with Priority)</option>
@@ -286,6 +317,9 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
                   {formMode === 'TP' && 'Button click transmits Red TSL Program tally (0x32) back to Tally Arbiter.'}
                   {formMode === 'TP_P2P' && 'Direct P2P Master: Toggles Program to paired Presenter; receives cue calls from Presenter.'}
                   {formMode === 'Presenter_P2P' && 'Direct P2P Slave: Displays TP Program/Preview tally; button press cues paired TP.'}
+                  {formMode === 'TSL_31' && 'Standard TSL 3.1 UMD listener via UDP/TCP. Displays tally and centers name prominently on 128x128 LCD.'}
+                  {formMode === 'TSL_50' && 'TSL 5.0 binary protocol via UDP/TCP. Filters by Screen & Index, displaying centered camera name.'}
+                  {formMode === 'OSC_CueLight' && 'RSMCK OSC Cue Light for iOS on UDP 53000. Supports /standby_ack, /standby, /go, /off & /banner.'}
                   {formMode === 'ETC_CueSystem' && 'Stage cue light outstation: Standby flashes Red; button press confirms ACK (solid Red); Go displays Green.'}
                   {formMode === 'NMOS_IS07' && 'AMWA NMOS IS-07: Emits state events for Program, Preview and Aux endpoints over ST 2110.'}
                   {formMode === 'RTP_MIDI' && 'AppleMIDI / rtpMIDI on UDP 5004. Priority: Red > Flashing Red > Green > Yellow > Blue > White.'}
@@ -385,7 +419,7 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
                     <Server className="w-3.5 h-3.5" />
                     <span>Tally Arbiter Server Settings</span>
                   </h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
                       <label className="block text-[11px] font-medium text-neutral-400 mb-1">
                         Tally Arbiter Host / IP
@@ -407,6 +441,18 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
                         value={formPort}
                         onChange={(e) => setFormPort(e.target.value)}
                         placeholder="4455"
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-sky-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                        TSL Return Port (Default: 8910)
+                      </label>
+                      <input
+                        type="text"
+                        value={formTslPort}
+                        onChange={(e) => setFormTslPort(e.target.value)}
+                        placeholder="8910"
                         className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-sky-500"
                       />
                     </div>
@@ -540,36 +586,59 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
               {/* MODE AWARE SECTION: NMOS IS-07 */}
               {formMode === 'NMOS_IS07' && (
                 <div className="p-4 bg-neutral-900/90 rounded-xl border border-cyan-900/50 space-y-3">
-                  <h3 className="text-xs font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
-                    <Tv className="w-3.5 h-3.5" />
-                    <span>AMWA NMOS IS-07 Event &amp; Tally Endpoints</span>
-                  </h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
-                        NMOS Registration Server Host / IP
-                      </label>
-                      <input
-                        type="text"
-                        value={formNmosHost}
-                        onChange={(e) => setFormNmosHost(e.target.value)}
-                        placeholder="192.168.1.200"
-                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-sky-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
-                        IS-04 Registry Port
-                      </label>
-                      <input
-                        type="number"
-                        value={formNmosPort}
-                        onChange={(e) => setFormNmosPort(parseInt(e.target.value) || 8235)}
-                        placeholder="8235"
-                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-sky-500"
-                      />
-                    </div>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <Tv className="w-3.5 h-3.5" />
+                      <span>AMWA NMOS IS-07 Event &amp; Tally Endpoints</span>
+                    </h3>
+                    <span className="text-[10px] font-mono text-neutral-400">
+                      {formNmosAutoDisc ? 'DNS-SD Discovery' : 'Manual Registry Host'}
+                    </span>
                   </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                      NMOS Registration Discovery Mode (Item 1)
+                    </label>
+                    <select
+                      value={formNmosAutoDisc ? '1' : '0'}
+                      onChange={(e) => setFormNmosAutoDisc(e.target.value === '1')}
+                      className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-sky-500 cursor-pointer"
+                    >
+                      <option value="1">Automatic Discovery via DNS-SD (_nmos-registration._tcp)</option>
+                      <option value="0">Manual IP &amp; Port Configuration</option>
+                    </select>
+                  </div>
+
+                  {!formNmosAutoDisc && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-neutral-800">
+                      <div>
+                        <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                          NMOS Registration Server Host / IP
+                        </label>
+                        <input
+                          type="text"
+                          value={formNmosHost}
+                          onChange={(e) => setFormNmosHost(e.target.value)}
+                          placeholder="192.168.1.200"
+                          className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-sky-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                          IS-04 Registry Port
+                        </label>
+                        <input
+                          type="number"
+                          value={formNmosPort}
+                          onChange={(e) => setFormNmosPort(parseInt(e.target.value) || 8235)}
+                          placeholder="8235"
+                          className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-sky-500"
+                        />
+                      </div>
+                    </div>
+                  )}
+
                   <div>
                     <label className="block text-[11px] font-medium text-neutral-400 mb-1">
                       Source / Device UUID
@@ -619,6 +688,182 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
                         className="w-full bg-neutral-950 border border-neutral-700 rounded px-2.5 py-1.5 text-xs font-mono text-white"
                       />
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {/* MODE AWARE SECTION: TSL 3.1 Listener (Item 2) */}
+              {formMode === 'TSL_31' && (
+                <div className="p-4 bg-neutral-900/90 rounded-xl border border-blue-900/50 space-y-3">
+                  <h3 className="text-xs font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Radio className="w-3.5 h-3.5" />
+                    <span>TSL 3.1 UMD Listener Configuration (Item 2)</span>
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                        TSL 3.1 Port
+                      </label>
+                      <input
+                        type="number"
+                        value={formTsl31Port}
+                        onChange={(e) => setFormTsl31Port(parseInt(e.target.value) || 8910)}
+                        placeholder="8910"
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                        Transport Protocol
+                      </label>
+                      <select
+                        value={formTsl31Transport}
+                        onChange={(e) => setFormTsl31Transport(e.target.value as 'UDP' | 'TCP')}
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white cursor-pointer"
+                      >
+                        <option value="UDP">UDP Datagram</option>
+                        <option value="TCP">TCP Socket Stream</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                        TSL Address (0 = Omni / Any)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={127}
+                        value={formTsl31Address}
+                        onChange={(e) => setFormTsl31Address(parseInt(e.target.value) || 0)}
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white"
+                      />
+                    </div>
+                  </div>
+                  <div className="p-2.5 bg-neutral-950 rounded-lg border border-neutral-800 text-[11px] text-neutral-400">
+                    Display: Received 16-character camera text is centered prominently on screen in large font (scrolling ticker if &gt; 9 characters).
+                  </div>
+                </div>
+              )}
+
+              {/* MODE AWARE SECTION: TSL 5.0 Listener (Item 5) */}
+              {formMode === 'TSL_50' && (
+                <div className="p-4 bg-neutral-900/90 rounded-xl border border-emerald-900/50 space-y-3">
+                  <h3 className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Radio className="w-3.5 h-3.5" />
+                    <span>TSL 5.0 Binary Listener Configuration (Item 5)</span>
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                        TSL 5.0 Port
+                      </label>
+                      <input
+                        type="number"
+                        value={formTsl50Port}
+                        onChange={(e) => setFormTsl50Port(parseInt(e.target.value) || 8900)}
+                        placeholder="8900"
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                        Transport Protocol
+                      </label>
+                      <select
+                        value={formTsl50Transport}
+                        onChange={(e) => setFormTsl50Transport(e.target.value as 'UDP' | 'TCP')}
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white cursor-pointer"
+                      >
+                        <option value="UDP">UDP Datagram</option>
+                        <option value="TCP">TCP Socket Stream</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                        Screen Filter Index (0 = Any Screen)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={65535}
+                        value={formTsl50Screen}
+                        onChange={(e) => setFormTsl50Screen(parseInt(e.target.value) || 0)}
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                        Device Index Filter (0 = Any Index)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={65535}
+                        value={formTsl50Index}
+                        onChange={(e) => setFormTsl50Index(parseInt(e.target.value) || 0)}
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white"
+                      />
+                    </div>
+                  </div>
+                  <div className="p-2.5 bg-neutral-950 rounded-lg border border-neutral-800 text-[11px] text-neutral-400">
+                    Supports Unicode strings, TSL 5.0 16-bit tally status flags (Tally 1 Red, Tally 2 Green, Tally 3 Amber, Tally 4 Blue), and centers device name on LCD.
+                  </div>
+                </div>
+              )}
+
+              {/* MODE AWARE SECTION: OSC Cue Light for iOS (Item 6: RSMCK Protocol) */}
+              {formMode === 'OSC_CueLight' && (
+                <div className="p-4 bg-neutral-900/90 rounded-xl border border-amber-900/50 space-y-3">
+                  <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <MessageSquare className="w-3.5 h-3.5" />
+                    <span>OSC Cue Light for iOS (RSMCK Protocol - Item 6)</span>
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                        UDP Port (Standard iOS Default: 53000)
+                      </label>
+                      <input
+                        type="number"
+                        value={formOscCuePort}
+                        onChange={(e) => setFormOscCuePort(parseInt(e.target.value) || 53000)}
+                        placeholder="53000"
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                        Station / Channel Identifier
+                      </label>
+                      <input
+                        type="text"
+                        value={formOscCueStation}
+                        onChange={(e) => setFormOscCueStation(e.target.value)}
+                        placeholder="1"
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                      Persistent Top Banner Text
+                    </label>
+                    <input
+                      type="text"
+                      value={formOscCueBanner}
+                      onChange={(e) => setFormOscCueBanner(e.target.value)}
+                      placeholder="e.g. CUE LIGHT - STAGE LEFT"
+                      className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white"
+                    />
+                  </div>
+                  <div className="p-2.5 bg-neutral-950 rounded-lg border border-neutral-800 text-[11px] text-neutral-400 space-y-1">
+                    <div>• <code>/cuelight/{formOscCueStation}/standby_ack</code>: Flashes Red. User button press confirms ACK (solid Red) and replies with <code>/cuelight/state/{formOscCueStation}/ack</code>.</div>
+                    <div>• <code>/cuelight/{formOscCueStation}/standby</code>: Solid Red.</div>
+                    <div>• <code>/cuelight/{formOscCueStation}/go</code>: Solid Green.</div>
+                    <div>• <code>/cuelight/{formOscCueStation}/off</code>: Cue Off (Black).</div>
+                    <div>• <code>/cuelight/{formOscCueStation}/banner [text]</code>: Updates top banner dynamically.</div>
                   </div>
                 </div>
               )}

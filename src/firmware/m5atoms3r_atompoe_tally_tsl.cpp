@@ -130,9 +130,12 @@ bool LAST_MSG                 = false;
 // - "Presenter_P2P": Presenter no Tally Arbiter (P2P direct to paired TP)
 // - "TP_P2P": TP no Tally Arbiter (P2P direct to paired Presenter)
 // - "ETC_CueSystem": ETC CueSystem Outstation (Theatrical Cue Light with Flashing Standby & Ack)
-// - "NMOS_IS07": NMOS IS-07 Event & Tally with Program, Preview & Aux endpoints
+// - "NMOS_IS07": NMOS IS-07 Event & Tally with Program, Preview & Aux endpoints (DNS-SD or manual)
 // - "RTP_MIDI": rtpMIDI / AppleMIDI Outstation (Red > Flash Red > Green > Yellow > Blue > White)
 // - "OSC": Open Sound Control Outstation with scrolling text ticker support
+// - "TSL_31": TSL 3.1 Listener (UDP or TCP, name displayed in centre)
+// - "TSL_50": TSL 5.0 Listener (UDP or TCP, name displayed in centre)
+// - "OSC_CueLight": OSC Cue Light for iOS (RSMCK protocol: standby_ack, standby, go, off, banner)
 String operatingMode    = "TP";           // Default mode
 String pairingGroup     = "Studio-1";     // mDNS / DNS-SD pairing group
 String pairedTargetIP   = "";             // Target IP of paired unit in P2P mode
@@ -147,6 +150,7 @@ bool   cuesystem_standby_active = false;           // Standby active (flashing r
 bool   cuesystem_ack_active     = false;           // Performer acknowledged (solid red)
 
 // NMOS IS-07 Event & Tally Settings (SMPTE ST 2110)
+bool   nmos_auto_discover   = true;           // Discover NMOS registration server via DNS-SD (_nmos-registration._tcp)
 String nmos_registry_host   = "192.168.1.50"; // NMOS IS-04 Registration Server
 int    nmos_registry_port   = 8235;           // NMOS Registration Port (default 8235)
 String nmos_source_id       = "urn:uuid:7c9e6679-7425-4094-8f92-d6c1b35b62b1";
@@ -162,14 +166,12 @@ bool   nmos_is_on_air       = false;
 int    rtpmidi_port         = 5004; // Standard RTP-MIDI UDP port (AppleMIDI session & data)
 int    rtpmidi_channel      = 1;    // MIDI Channel: 1-16 (0 = Omni / all channels)
 int    rtpmidi_trigger_type = 0;    // 0 = Note On/Off, 1 = Control Change (CC), 2 = Program Change (PC)
-// Values / Note numbers for each state:
 int    rtpmidi_num_red       = 60; // C4  (Priority 1 - Red)
 int    rtpmidi_num_flash_red = 61; // C#4 (Priority 2 - Flashing Red)
 int    rtpmidi_num_green     = 62; // D4  (Priority 3 - Green)
 int    rtpmidi_num_yellow    = 63; // D#4 (Priority 4 - Yellow)
 int    rtpmidi_num_blue      = 64; // E4  (Priority 5 - Blue)
 int    rtpmidi_num_white     = 65; // F4  (Priority 6 - White)
-// Active states:
 bool   midi_active_red       = false;
 bool   midi_active_flash_red = false;
 bool   midi_active_green     = false;
@@ -187,6 +189,36 @@ bool   osc_active_green     = false;
 bool   osc_active_yellow    = false;
 bool   osc_active_blue      = false;
 bool   osc_active_white     = false;
+
+// TSL 3.1 Dedicated Listener Mode
+int    tsl31_port           = 8910;              // UDP / TCP port (default 8910)
+String tsl31_transport      = "UDP";             // "UDP" or "TCP"
+int    tsl31_address        = 0;                 // Address filter (0 = all / wildcard)
+String tsl31_name           = "TSL 3.1 CUE";     // 16-char label displayed in centre of screen
+
+// TSL 5.0 Dedicated Listener Mode
+int    tsl50_port           = 8900;              // UDP / TCP port (default 8900)
+String tsl50_transport      = "UDP";             // "UDP" or "TCP"
+int    tsl50_screen         = 0;                 // Screen index
+int    tsl50_index          = 0;                 // Display index filter (0 = all)
+String tsl50_name           = "TSL 5.0 CUE";     // Label displayed in centre of screen
+
+// OSC Cue Light for iOS (RSMCK protocol: rsmck.co.uk/blog/osc-cue-light-for-ios/)
+int    osccue_port          = 53000;             // Standard OSC Cue Light UDP port
+String osccue_station_id    = "SL";              // Station ID (e.g. "SL", "SR", "1", "FLYS")
+String osccue_banner        = "CUE LIGHT";       // Persistent banner text
+String osccue_message       = "";                // Cue message text
+String osccue_state         = "off";             // "off", "standby", "standby_ack", "go"
+bool   osccue_ack_done      = false;             // Has performer acknowledged standby_ack
+IPAddress osccue_last_sender_ip = IPAddress(255, 255, 255, 255);
+uint16_t osccue_last_sender_port = 53000;
+
+// Wi-Fi Precedence State (disable Wi-Fi when PoE Ethernet is active)
+bool   wifiDisabledForEth   = false;
+unsigned long lastEthCheckTime = 0;
+
+// TCP Server instance for TSL 3.1 & TSL 5.0 TCP modes
+AsyncServer* tslTcpServer   = nullptr;
 
 // IMU Screen Auto-Rotation State
 uint8_t currentRotation      = 0;
@@ -228,13 +260,10 @@ Preferences preferences;
 AsyncWebServer server(80);
 Mycila::ESPConnect espConnect(server);
 
-// ==========================================
 // Double Buffering Canvas
-// ==========================================
-// 128x128 pixels @ 16-bit color depth (RGB565) = 32,768 bytes (32 KB).
-// AtomS3R ESP32-S3 has 8MB PSRAM and 512KB SRAM, easily accommodating this.
 M5Canvas canvas(&M5.Display);
 bool doubleBufferEnabled = false;
+
 // Multi-Core & Thread-Safety Variables (FreeRTOS)
 volatile bool tallyStateChanged = false;
 volatile bool flashRequested = false;
@@ -248,6 +277,13 @@ void sendNMOSTally(bool live);
 void processIncomingTSL();
 void processRTPMidiPacket(uint8_t* buf, int len, IPAddress remoteIP, uint16_t remotePort);
 void processOSCPacket(uint8_t* buf, int len);
+void processTSL31Packet(uint8_t* buf, int len);
+void processTSL50Packet(uint8_t* buf, int len);
+void processOSCCueLightPacket(uint8_t* buf, int len, IPAddress remoteIP, uint16_t remotePort);
+void sendOSCCueLightState(String stateName);
+void discoverNMOSRegistrationServer();
+void checkEthernetWifiPrecedence();
+void setupTSLTcpServer(uint16_t port);
 void evaluateRTPMidiState();
 void evaluateOSCState();
 void evaluateMode();
@@ -302,6 +338,18 @@ bool isOSC() {
   return operatingMode == "OSC";
 }
 
+bool isTSL31Listener() {
+  return operatingMode == "TSL_31";
+}
+
+bool isTSL50Listener() {
+  return operatingMode == "TSL_50";
+}
+
+bool isOSCCueLight() {
+  return operatingMode == "OSC_CueLight";
+}
+
 bool usesTallyArbiter() {
   return operatingMode == "TP" || operatingMode == "Presenter";
 }
@@ -348,6 +396,65 @@ String getNetworkIPStr() {
     return WiFi.localIP().toString();
   }
   return "0.0.0.0";
+}
+
+// Requirement 4: Disable Wi-Fi when PoE Ethernet is connected to avoid multiple IP addresses
+void checkEthernetWifiPrecedence() {
+  if (isEthernetActive()) {
+    if (!wifiDisabledForEth) {
+      wifiDisabledForEth = true;
+      logger("[Network] PoE Ethernet active (" + ETH.localIP().toString() + "). Disabling Wi-Fi to eliminate multiple IP addresses.", "info");
+      WiFi.disconnect(true);
+      WiFi.mode(WIFI_OFF);
+    }
+  } else {
+    if (wifiDisabledForEth) {
+      wifiDisabledForEth = false;
+      logger("[Network] PoE Ethernet disconnected. Re-enabling Wi-Fi fallback.", "info");
+      WiFi.mode(WIFI_STA);
+      espConnect.begin(listenerDeviceName.c_str(), listenerDeviceName.c_str());
+    }
+  }
+}
+
+// Requirement 1: Discover NMOS registration server via DNS-SD (_nmos-registration._tcp)
+void discoverNMOSRegistrationServer() {
+  if (!nmos_auto_discover || !networkConnected) return;
+  logger("[NMOS] Browsing DNS-SD for _nmos-registration._tcp...", "info");
+  int n = MDNS.queryService("nmos-registration", "tcp");
+  if (n == 0) {
+    n = MDNS.queryService("nmos-register", "tcp");
+  }
+  if (n > 0) {
+    nmos_registry_host = MDNS.address(0).toString();
+    nmos_registry_port = MDNS.port(0);
+    logger("[NMOS] Discovered IS-04 Registration Server: " + nmos_registry_host + ":" + String(nmos_registry_port), "info");
+  } else {
+    logger("[NMOS] No DNS-SD server found; using configured host/port: " + nmos_registry_host + ":" + String(nmos_registry_port), "info");
+  }
+}
+
+// TCP Server initialization for TSL 3.1 & 5.0 TCP listeners
+void setupTSLTcpServer(uint16_t port) {
+  if (tslTcpServer != nullptr) {
+    tslTcpServer->end();
+    delete tslTcpServer;
+    tslTcpServer = nullptr;
+  }
+  tslTcpServer = new AsyncServer(port);
+  tslTcpServer->onClient([](void* arg, AsyncClient* client) {
+    logger("[TCP] TSL Client connected: " + client->remoteIP().toString(), "info");
+    client->onData([](void* arg, AsyncClient* c, void* data, size_t len) {
+      uint8_t* p = (uint8_t*)data;
+      if (isTSL31Listener()) {
+        processTSL31Packet(p, len);
+      } else if (isTSL50Listener()) {
+        processTSL50Packet(p, len);
+      }
+    }, NULL);
+  }, NULL);
+  tslTcpServer->begin();
+  logger("[TCP] TSL TCP Server started listening on port " + String(port), "info");
 }
 
 // ==========================================
@@ -472,6 +579,24 @@ void processIncomingTSL() {
     int len = udp.read(packetBuffer, sizeof(packetBuffer) - 1);
     if (len <= 0) return;
     packetBuffer[len] = '\0';
+
+    // 0. Dedicated TSL 3.1 Listener Mode (UDP)
+    if (isTSL31Listener() && tsl31_transport == "UDP") {
+      processTSL31Packet(packetBuffer, len);
+      return;
+    }
+
+    // 0.5 Dedicated TSL 5.0 Listener Mode (UDP)
+    if (isTSL50Listener() && tsl50_transport == "UDP") {
+      processTSL50Packet(packetBuffer, len);
+      return;
+    }
+
+    // 0.8 OSC Cue Light for iOS (RSMCK Protocol) Mode
+    if (isOSCCueLight()) {
+      processOSCCueLightPacket(packetBuffer, len, udp.remoteIP(), udp.remotePort());
+      return;
+    }
 
     // 1. rtpMIDI / AppleMIDI Mode
     if (isRTPMidi()) {
@@ -829,6 +954,180 @@ void evaluateOSCState() {
 }
 
 // ==========================================
+// TSL 3.1 Dedicated Listener Parser
+// ==========================================
+void processTSL31Packet(uint8_t* buf, int len) {
+  if (len < 18) return;
+  uint8_t addr = buf[0] & 0x7F;
+  uint8_t ctrl = buf[1];
+
+  if (tsl31_address == 0 || addr == tsl31_address) {
+    char textBuf[17];
+    memcpy(textBuf, buf + 2, 16);
+    textBuf[16] = '\0';
+    String lbl = String(textBuf);
+    lbl.trim();
+    if (lbl.length() > 0) {
+      tsl31_name = lbl;
+    }
+
+    bool red = (ctrl & REDTALLY) != 0;
+    bool green = (ctrl & GREENTALLY) != 0;
+    if (red && green) {
+      actualType = "\"aux\"";
+      actualColor = "#FFA500";
+    } else if (red) {
+      actualType = "\"program\"";
+      actualColor = "#FF0000";
+    } else if (green) {
+      actualType = "\"preview\"";
+      actualColor = "#00FF00";
+    } else {
+      actualType = "";
+      actualColor = "";
+    }
+    renderScreen();
+  }
+}
+
+// ==========================================
+// TSL 5.0 Dedicated Listener Parser
+// ==========================================
+void processTSL50Packet(uint8_t* buf, int len) {
+  if (len < 12) return;
+  uint16_t screen = buf[4] | (buf[5] << 8);
+  uint16_t index = buf[6] | (buf[7] << 8);
+  uint16_t ctrl = buf[8] | (buf[9] << 8);
+  uint16_t textLen = buf[10] | (buf[11] << 8);
+
+  if (tsl50_index == 0 || index == tsl50_index) {
+    if (textLen > 0 && len >= 12 + textLen) {
+      char tBuf[64];
+      int copyLen = textLen < 63 ? textLen : 63;
+      memcpy(tBuf, buf + 12, copyLen);
+      tBuf[copyLen] = '\0';
+      String lbl = String(tBuf);
+      lbl.trim();
+      if (lbl.length() > 0) {
+        tsl50_name = lbl;
+      }
+    }
+
+    uint8_t t1 = ctrl & 0x03;
+    uint8_t t2 = (ctrl >> 2) & 0x03;
+    uint8_t t3 = (ctrl >> 4) & 0x03;
+    uint8_t t4 = (ctrl >> 6) & 0x03;
+
+    if (t1 == 1) {
+      actualType = "\"program\"";
+      actualColor = "#FF0000";
+    } else if (t2 == 1) {
+      actualType = "\"preview\"";
+      actualColor = "#00FF00";
+    } else if (t3 == 1) {
+      actualType = "\"aux\"";
+      actualColor = "#FFA500";
+    } else if (t4 == 1) {
+      actualType = "\"blue\"";
+      actualColor = "#0088FF";
+    } else {
+      actualType = "";
+      actualColor = "";
+    }
+    renderScreen();
+  }
+}
+
+// ==========================================
+// OSC Cue Light for iOS (RSMCK Protocol) Parser
+// ==========================================
+void processOSCCueLightPacket(uint8_t* buf, int len, IPAddress remoteIP, uint16_t remotePort) {
+  osccue_last_sender_ip = remoteIP;
+  osccue_last_sender_port = remotePort;
+
+  String oscAddr = "";
+  int idx = 0;
+  while (idx < len && buf[idx] != 0) {
+    oscAddr += (char)buf[idx++];
+  }
+  idx = (idx + 4) & ~0x03;
+
+  String argString = "";
+  if (idx < len && buf[idx] == ',') {
+    String typeTags = "";
+    while (idx < len && buf[idx] != 0) {
+      typeTags += (char)buf[idx++];
+    }
+    idx = (idx + 4) & ~0x03;
+    if (typeTags.indexOf('s') >= 0 && idx < len) {
+      while (idx < len && buf[idx] != 0) {
+        argString += (char)buf[idx++];
+      }
+    }
+  }
+
+  if (oscAddr.startsWith("/cuelight/")) {
+    String sub = oscAddr.substring(10);
+    int slashIdx = sub.indexOf('/');
+    if (slashIdx > 0) {
+      String station = sub.substring(0, slashIdx);
+      String cmd = sub.substring(slashIdx + 1);
+      cmd.toLowerCase();
+
+      bool match = (station == "*" || station.equalsIgnoreCase(osccue_station_id) ||
+                    (station.indexOf(osccue_station_id) >= 0));
+
+      if (match) {
+        if (cmd == "standby_ack") {
+          osccue_state = "standby_ack";
+          osccue_ack_done = false;
+          if (argString.length() > 0) osccue_message = argString;
+          logger("[OSC CueLight] STANDBY_ACK on station " + station + " msg: " + osccue_message, "info");
+        } else if (cmd == "standby") {
+          osccue_state = "standby";
+          osccue_ack_done = true;
+          if (argString.length() > 0) osccue_message = argString;
+          sendOSCCueLightState("standby");
+          logger("[OSC CueLight] STANDBY on station " + station, "info");
+        } else if (cmd == "go") {
+          osccue_state = "go";
+          if (argString.length() > 0) osccue_message = argString;
+          sendOSCCueLightState("go");
+          logger("[OSC CueLight] GO on station " + station + " msg: " + osccue_message, "info");
+        } else if (cmd == "off") {
+          osccue_state = "off";
+          osccue_message = "";
+          sendOSCCueLightState("off");
+          logger("[OSC CueLight] OFF on station " + station, "info");
+        } else if (cmd == "banner") {
+          if (argString.length() > 0) osccue_banner = argString;
+          logger("[OSC CueLight] BANNER updated: " + osccue_banner, "info");
+        }
+        renderScreen();
+      }
+    }
+  }
+}
+
+void sendOSCCueLightState(String stateName) {
+  if (!networkConnected) return;
+  String addr = "/cuelight/state/" + osccue_station_id + "/" + stateName;
+  int addrLen = addr.length();
+  int pad = (4 - (addrLen % 4)) % 4;
+  if (pad == 0) pad = 4;
+  int totalLen = addrLen + pad + 4;
+  uint8_t oscBuf[totalLen];
+  memset(oscBuf, 0, totalLen);
+  memcpy(oscBuf, addr.c_str(), addrLen);
+  oscBuf[addrLen + pad] = ',';
+
+  udp.beginPacket(osccue_last_sender_ip, osccue_last_sender_port);
+  udp.write(oscBuf, totalLen);
+  udp.endPacket();
+  logger("[OSC CueLight] Sent state reply: " + addr, "info");
+}
+
+// ==========================================
 // Double-Buffered Screen Rendering
 // ==========================================
 void renderScreen() {
@@ -839,16 +1138,78 @@ void renderScreen() {
 
   bool flashPhase = (millis() / 400) % 2 == 0;
 
-  // 1. ETC CueSystem: Standby is Flashing Red until Acknowledged (Solid Red)
-  if (isETCCueSystem()) {
+  // 0. OSC Cue Light (RSMCK iOS Protocol)
+  if (isOSCCueLight()) {
+    if (osccue_state == "standby_ack") {
+      if (!osccue_ack_done) {
+        bgColor = flashPhase ? TFT_RED : TFT_BLACK;
+        textColor = flashPhase ? TFT_WHITE : TFT_RED;
+        statusLabel = "STANDBY (ACK)";
+      } else {
+        bgColor = TFT_RED;
+        textColor = TFT_WHITE;
+        statusLabel = "ACKNOWLEDGED";
+      }
+    } else if (osccue_state == "standby") {
+      bgColor = TFT_RED;
+      textColor = TFT_WHITE;
+      statusLabel = "STANDBY";
+    } else if (osccue_state == "go") {
+      bgColor = TFT_GREEN;
+      textColor = TFT_BLACK;
+      statusLabel = "GO!";
+    } else {
+      bgColor = TFT_BLACK;
+      textColor = TFT_WHITE;
+      statusLabel = "OFF";
+    }
+  } else if (isTSL31Listener()) {
+    if (actualType == "\"program\"") {
+      bgColor = TFT_RED;
+      textColor = TFT_WHITE;
+      statusLabel = "PROGRAM";
+    } else if (actualType == "\"preview\"") {
+      bgColor = TFT_GREEN;
+      textColor = TFT_BLACK;
+      statusLabel = "PREVIEW";
+    } else if (actualType == "\"aux\"") {
+      bgColor = TFT_ORANGE;
+      textColor = TFT_BLACK;
+      statusLabel = "AUX";
+    } else {
+      bgColor = TFT_BLACK;
+      textColor = TFT_WHITE;
+      statusLabel = "STANDBY";
+    }
+  } else if (isTSL50Listener()) {
+    if (actualType == "\"program\"") {
+      bgColor = TFT_RED;
+      textColor = TFT_WHITE;
+      statusLabel = "PROGRAM";
+    } else if (actualType == "\"preview\"") {
+      bgColor = TFT_GREEN;
+      textColor = TFT_BLACK;
+      statusLabel = "PREVIEW";
+    } else if (actualType == "\"aux\"") {
+      bgColor = TFT_ORANGE;
+      textColor = TFT_BLACK;
+      statusLabel = "AUX";
+    } else if (actualType == "\"blue\"") {
+      bgColor = TFT_BLUE;
+      textColor = TFT_WHITE;
+      statusLabel = "BLUE";
+    } else {
+      bgColor = TFT_BLACK;
+      textColor = TFT_WHITE;
+      statusLabel = "STANDBY";
+    }
+  } else if (isETCCueSystem()) {
     if (actualType == "\"standby\"") {
       if (!cuesystem_ack_active) {
-        // Unacknowledged: Flashing Red!
         bgColor = flashPhase ? TFT_RED : TFT_BLACK;
         textColor = flashPhase ? TFT_WHITE : TFT_RED;
         statusLabel = "STANDBY";
       } else {
-        // Performer Acknowledged: Solid Red!
         bgColor = TFT_RED;
         textColor = TFT_WHITE;
         statusLabel = "ACKNOWLEDGED";
@@ -863,7 +1224,6 @@ void renderScreen() {
       statusLabel = "CUE OFF";
     }
   } else if (actualType == "\"flashred\"") {
-    // rtpMIDI or OSC Flashing Red State
     bgColor = flashPhase ? TFT_RED : TFT_BLACK;
     textColor = flashPhase ? TFT_WHITE : TFT_RED;
     statusLabel = "FLASH RED";
@@ -912,63 +1272,90 @@ void renderScreen() {
     auto renderContent = [&](M5Canvas* g) {
       g->fillScreen(bgColor);
 
-      // Clock: Larger font with seconds in a black box with white text, ABOVE DeviceName
-      g->fillRoundRect(4, 4, 120, 24, 4, TFT_BLACK);
-      g->drawRoundRect(4, 4, 120, 24, 4, TFT_DARKGRAY);
-
-      time_t now;
-      time(&now);
-      struct tm timeinfo;
-      char timeStr[12] = "--:--:--";
-      if (now > 100000) {
-        localtime_r(&now, &timeinfo);
-        strftime(timeStr, sizeof(timeStr), "%H:%M:%S", &timeinfo);
+      // Top Header: For OSC Cue Light show Banner; else show Clock
+      if (isOSCCueLight()) {
+        g->fillRoundRect(4, 4, 120, 22, 4, TFT_BLACK);
+        g->drawRoundRect(4, 4, 120, 22, 4, TFT_DARKGRAY);
+        g->setTextDatum(middle_center);
+        g->setTextSize(1);
+        g->setTextColor(TFT_CYAN, TFT_BLACK);
+        g->drawString(osccue_banner, 64, 15);
       } else {
-        // Fallback to live ticking uptime clock until NTP sync completes
-        unsigned long totalSecs = millis() / 1000;
-        unsigned int h = (totalSecs / 3600) % 24;
-        unsigned int m = (totalSecs / 60) % 60;
-        unsigned int s = totalSecs % 60;
-        snprintf(timeStr, sizeof(timeStr), "%02u:%02u:%02u", h, m, s);
-      }
-      g->setTextDatum(middle_center);
-      g->setTextSize(2);
-      g->setTextColor(TFT_WHITE, TFT_BLACK);
-      g->drawString(timeStr, 64, 16);
+        // Clock: Larger font with seconds in a black box with white text
+        g->fillRoundRect(4, 4, 120, 24, 4, TFT_BLACK);
+        g->drawRoundRect(4, 4, 120, 24, 4, TFT_DARKGRAY);
 
-      // Device Name / OSC Scrolling Text Message
+        time_t now;
+        time(&now);
+        struct tm timeinfo;
+        char timeStr[12] = "--:--:--";
+        if (now > 100000) {
+          localtime_r(&now, &timeinfo);
+          strftime(timeStr, sizeof(timeStr), "%H:%M:%S", &timeinfo);
+        } else {
+          unsigned long totalSecs = millis() / 1000;
+          unsigned int h = (totalSecs / 3600) % 24;
+          unsigned int m = (totalSecs / 60) % 60;
+          unsigned int s = totalSecs % 60;
+          snprintf(timeStr, sizeof(timeStr), "%02u:%02u:%02u", h, m, s);
+        }
+        g->setTextDatum(middle_center);
+        g->setTextSize(2);
+        g->setTextColor(TFT_WHITE, TFT_BLACK);
+        g->drawString(timeStr, 64, 16);
+      }
+
+      // Device Name / Centre Display Text
       String displayName = DeviceName;
       if (isOSC() && osc_custom_message.length() > 0) {
         displayName = osc_custom_message;
+      } else if (isTSL31Listener()) {
+        displayName = tsl31_name;
+      } else if (isTSL50Listener()) {
+        displayName = tsl50_name;
+      } else if (isOSCCueLight()) {
+        displayName = osccue_message.length() > 0 ? osccue_message : (osccue_state == "go" ? "GO!" : (osccue_state == "standby_ack" ? "STANDBY" : (osccue_state == "standby" ? "STANDBY" : "OFF")));
       }
 
       g->setTextSize(2);
       g->setTextColor(textColor, bgColor);
       int textWidth = g->textWidth(displayName.c_str());
 
-      if (textWidth > 116) {
-        // Text is too long for the 128px screen: smoothly scroll horizontally (ticker style)
-        int scrollRange = textWidth + 60;
-        int offset = (millis() / 35) % scrollRange;
-        int startX = 120 - offset;
-        g->setTextDatum(middle_left);
-        g->drawString(displayName, startX, 46);
-      } else {
-        // Fits within screen: draw centered
+      // Center prominent text for TSL 3.1 & 5.0 Listener (Requirements 2 & 5)
+      if (isTSL31Listener() || isTSL50Listener()) {
         g->setTextDatum(middle_center);
-        g->drawString(displayName, 64, 46);
+        if (textWidth > 116) {
+          int scrollRange = textWidth + 60;
+          int offset = (millis() / 35) % scrollRange;
+          int startX = 120 - offset;
+          g->setTextDatum(middle_left);
+          g->drawString(displayName, startX, 52);
+        } else {
+          g->drawString(displayName, 64, 52);
+        }
+      } else {
+        if (textWidth > 116) {
+          int scrollRange = textWidth + 60;
+          int offset = (millis() / 35) % scrollRange;
+          int startX = 120 - offset;
+          g->setTextDatum(middle_left);
+          g->drawString(displayName, startX, 46);
+        } else {
+          g->setTextDatum(middle_center);
+          g->drawString(displayName, 64, 46);
+        }
       }
 
-      // Tally Status Tag
+      // Status Tag Badge
       g->setTextDatum(middle_center);
       g->setTextSize(1);
-      g->drawRoundRect(14, 62, 100, 18, 4, textColor);
-      g->drawString(statusLabel, 64, 71);
+      g->drawRoundRect(14, 68, 100, 16, 4, textColor);
+      g->drawString(statusLabel, 64, 76);
 
       // Bottom Status: Mode Badge, Cue & Peer / TA status
       g->setTextDatum(top_left);
       g->setTextSize(1);
-      g->setCursor(4, 86);
+      g->setCursor(4, 88);
       g->setTextColor(textColor, bgColor);
       String roleBadge = "";
       if (operatingMode == "TP") roleBadge = "[TP (TA)]";
@@ -979,9 +1366,12 @@ void renderScreen() {
       else if (operatingMode == "NMOS_IS07") roleBadge = "[NMOS-07]";
       else if (operatingMode == "RTP_MIDI") roleBadge = "[rtpMIDI]";
       else if (operatingMode == "OSC") roleBadge = "[OSC CUE]";
+      else if (operatingMode == "TSL_31") roleBadge = String("[TSL3.1 ") + tsl31_transport + "]";
+      else if (operatingMode == "TSL_50") roleBadge = String("[TSL5.0 ") + tsl50_transport + "]";
+      else if (operatingMode == "OSC_CueLight") roleBadge = "[OSC CUE-LX]";
       g->print(roleBadge);
 
-      g->setCursor(68, 86);
+      g->setCursor(68, 88);
       if (isETCCueSystem()) {
         g->print("Ch: " + String(cuesystem_channel));
       } else if (isNMOSIS07()) {
@@ -990,10 +1380,16 @@ void renderScreen() {
         g->print("Ch:" + String(rtpmidi_channel == 0 ? "Omni" : String(rtpmidi_channel)));
       } else if (isOSC()) {
         g->print("Port:" + String(osc_port));
+      } else if (isTSL31Listener()) {
+        g->print("Port:" + String(tsl31_port));
+      } else if (isTSL50Listener()) {
+        g->print("Port:" + String(tsl50_port));
+      } else if (isOSCCueLight()) {
+        g->print("ID: " + osccue_station_id);
       } else if (isP2PMode()) {
         g->print("Grp: " + pairingGroup.substring(0, 6));
       } else {
-        g->print(socket.isConnected() ? "TA: ONLINE" : "TA: OFFLINE");
+        g->print(socket.isConnected() ? "TA: Online" : "TA: Offline");
       }
 
       g->setCursor(4, 98);
@@ -1108,6 +1504,21 @@ void renderScreen() {
       } else if (isP2PMode()) {
         g->print("Peer: ");
         g->println(pairedTargetIP.length() > 0 ? pairedTargetIP : "Unpaired (B-cast)");
+      } else if (isTSL31Listener()) {
+        g->print("TSL31: ");
+        g->print(tsl31_transport);
+        g->print(":");
+        g->println(tsl31_port);
+      } else if (isTSL50Listener()) {
+        g->print("TSL50: ");
+        g->print(tsl50_transport);
+        g->print(":");
+        g->println(tsl50_port);
+      } else if (isOSCCueLight()) {
+        g->print("CueLX: ID ");
+        g->print(osccue_station_id);
+        g->print(" :");
+        g->println(osccue_port);
       } else {
         g->print("TA:   ");
         g->println(socket.isConnected() ? "Connected" : "Disconnected");
@@ -1260,6 +1671,15 @@ void setupWebServer() {
               "<option value='OSC'");
     if (operatingMode == "OSC") html += F(" selected");
     html += F(">OSC (Open Sound Control) Outstation</option>"
+              "<option value='TSL_31'");
+    if (operatingMode == "TSL_31") html += F(" selected");
+    html += F(">TSL 3.1 Listener (UDP / TCP with centered name)</option>"
+              "<option value='TSL_50'");
+    if (operatingMode == "TSL_50") html += F(" selected");
+    html += F(">TSL 5.0 Listener (UDP / TCP with centered name)</option>"
+              "<option value='OSC_CueLight'");
+    if (operatingMode == "OSC_CueLight") html += F(" selected");
+    html += F(">OSC Cue Light (RSMCK iOS Protocol - Port 53000)</option>"
               "</select>"
 
               // Section: Network IP Configuration
@@ -1293,7 +1713,7 @@ void setupWebServer() {
     html += F("' placeholder='8.8.8.8'></div></div>"
               "</div></div>"
 
-              // Section: Tally Arbiter
+              // Section: Tally Arbiter (Item 3: Configurable TSL Port)
               "<div id='sec-ta' class='section-box'>"
               "<h2>Tally Arbiter Settings</h2>"
               "<div class='grid-2'>"
@@ -1303,10 +1723,14 @@ void setupWebServer() {
               "<div><label>Socket.IO Port</label><input type='text' name='port' value='");
     html += tallyarbiter_port;
     html += F("'></div></div>"
-              "<label>Listener Device Name</label><input type='text' name='devicename' value='");
+              "<div class='grid-2'>"
+              "<div><label>Listener Device Name</label><input type='text' name='devicename' value='");
     html += listenerDeviceName;
-    html += F("'>"
-              "<div class='hint'>Tally Arbiter connects over WebSockets (port 4455) for multi-source tally routing.</div>"
+    html += F("'></div>"
+              "<div><label>TSL Return Port (Default: 8910)</label><input type='number' name='tslport' value='");
+    html += tallyarbiter_TSLport;
+    html += F("'></div></div>"
+              "<div class='hint'>Tally Arbiter connects over WebSockets (port 4455) for multi-source tally routing and returns TSL data on the configured TSL port.</div>"
               "</div>"
 
               // Section: Standalone P2P
@@ -1345,14 +1769,23 @@ void setupWebServer() {
               "<div class='hint'>Standby displays flashing red until acknowledged (solid red). Pressing button sends ACK to hub.</div>"
               "</div>"
 
-              // Section: NMOS IS-07 (Program, Preview, Aux Endpoints)
+              // Section: NMOS IS-07 (Item 1: DNS-SD auto discover or manual)
               "<div id='sec-nmos' class='section-box'>"
               "<h2>AMWA NMOS IS-07 Event & Tally</h2>"
+              "<label>NMOS Registration Server Discovery</label>"
+              "<select name='nmos_autodisc' id='nmos_autodisc'>"
+              "<option value='1'");
+    if (nmos_auto_discover) html += F(" selected");
+    html += F(">Automatic via DNS-SD (_nmos-registration._tcp)</option>"
+              "<option value='0'");
+    if (!nmos_auto_discover) html += F(" selected");
+    html += F(">Manual Server Host & Port</option>"
+              "</select>"
               "<div class='grid-2'>"
-              "<div><label>NMOS Registration Server Host / IP</label><input type='text' name='nmos_host' value='");
+              "<div><label>Manual Registry Host / IP</label><input type='text' name='nmos_host' value='");
     html += nmos_registry_host;
     html += F("'></div>"
-              "<div><label>IS-04 Registry Port</label><input type='number' name='nmos_port' value='");
+              "<div><label>Manual Registry Port</label><input type='number' name='nmos_port' value='");
     html += String(nmos_registry_port);
     html += F("'></div></div>"
               "<label>Source / Device UUID</label><input type='text' name='nmos_source' value='");
@@ -1428,6 +1861,64 @@ void setupWebServer() {
               "<div class='hint'>Listens for /cuelight/red, /flashred, /green, /yellow, /blue, /white [1/0] and /cuelight/text [string].</div>"
               "</div>"
 
+              // Section: TSL 3.1 Listener (Item 2)
+              "<div id='sec-tsl31' class='section-box'>"
+              "<h2>TSL 3.1 Listener Settings</h2>"
+              "<div class='grid-2'>"
+              "<div><label>TSL 3.1 Port</label><input type='number' name='tsl31_port' value='");
+    html += String(tsl31_port);
+    html += F("'></div>"
+              "<div><label>Transport Protocol</label><select name='tsl31_trans'>"
+              "<option value='UDP'");
+    if (tsl31_transport == "UDP") html += F(" selected");
+    html += F(">UDP</option><option value='TCP'");
+    if (tsl31_transport == "TCP") html += F(" selected");
+    html += F(">TCP</option></select></div></div>"
+              "<label>Display Address Filter (0 = Any/All)</label><input type='number' name='tsl31_addr' min='0' max='127' value='");
+    html += String(tsl31_address);
+    html += F("'>"
+              "<div class='hint'>Decodes standard 18-byte TSL 3.1 packets; displays tally status and source name prominently in the centre.</div>"
+              "</div>"
+
+              // Section: TSL 5.0 Listener (Item 5)
+              "<div id='sec-tsl50' class='section-box'>"
+              "<h2>TSL 5.0 Listener Settings</h2>"
+              "<div class='grid-2'>"
+              "<div><label>TSL 5.0 Port</label><input type='number' name='tsl50_port' value='");
+    html += String(tsl50_port);
+    html += F("'></div>"
+              "<div><label>Transport Protocol</label><select name='tsl50_trans'>"
+              "<option value='UDP'");
+    if (tsl50_transport == "UDP") html += F(" selected");
+    html += F(">UDP</option><option value='TCP'");
+    if (tsl50_transport == "TCP") html += F(" selected");
+    html += F(">TCP</option></select></div></div>"
+              "<div class='grid-2'>"
+              "<div><label>Screen Index Filter</label><input type='number' name='tsl50_screen' value='");
+    html += String(tsl50_screen);
+    html += F("'></div>"
+              "<div><label>Display Index Filter (0 = Any)</label><input type='number' name='tsl50_idx' value='");
+    html += String(tsl50_index);
+    html += F("'></div></div>"
+              "<div class='hint'>Decodes TSL 5.0 binary packets (4 tally bits + UTF-8 display text) and displays name in the centre.</div>"
+              "</div>"
+
+              // Section: OSC Cue Light (Item 6: RSMCK iOS Protocol)
+              "<div id='sec-osccue' class='section-box'>"
+              "<h2>OSC Cue Light (RSMCK iOS Protocol)</h2>"
+              "<div class='grid-2'>"
+              "<div><label>UDP Listen Port (Default: 53000)</label><input type='number' name='osccue_port' value='");
+    html += String(osccue_port);
+    html += F("'></div>"
+              "<div><label>Station ID (e.g. 1, 2, A, B)</label><input type='text' name='osccue_station' value='");
+    html += osccue_station_id;
+    html += F("'></div></div>"
+              "<label>Persistent Top Banner Text</label><input type='text' name='osccue_banner' value='");
+    html += osccue_banner;
+    html += F("'>"
+              "<div class='hint'>Matches /cuelight/[station]/standby_ack (flashing red with button ACK return), /standby (solid red), /go (green), /off, and /banner.</div>"
+              "</div>"
+
               "<button type='submit' class='btn-save'>Save Settings & Apply</button>"
               "</form></div>"
 
@@ -1453,6 +1944,9 @@ void setupWebServer() {
               "  document.getElementById('sec-nmos').style.display = (m==='NMOS_IS07') ? 'block' : 'none';"
               "  document.getElementById('sec-rtpmidi').style.display = (m==='RTP_MIDI') ? 'block' : 'none';"
               "  document.getElementById('sec-osc').style.display = (m==='OSC') ? 'block' : 'none';"
+              "  document.getElementById('sec-tsl31').style.display = (m==='TSL_31') ? 'block' : 'none';"
+              "  document.getElementById('sec-tsl50').style.display = (m==='TSL_50') ? 'block' : 'none';"
+              "  document.getElementById('sec-osccue').style.display = (m==='OSC_CueLight') ? 'block' : 'none';"
               "}"
               "updateModeUI();"
               "async function scanPeers(){"
@@ -1534,6 +2028,26 @@ void setupWebServer() {
     obj["isNMOS"] = isNMOSIS07();
     obj["isRTPMidi"] = isRTPMidi();
     obj["isOSC"] = isOSC();
+    obj["isTSL31"] = isTSL31Listener();
+    obj["isTSL50"] = isTSL50Listener();
+    obj["isOSCCueLight"] = isOSCCueLight();
+    obj["nmosAutoDisc"] = nmos_auto_discover;
+    obj["tsl31Port"] = tsl31_port;
+    obj["tsl31Transport"] = tsl31_transport;
+    obj["tsl31Address"] = tsl31_address;
+    obj["tsl31Name"] = tsl31_name;
+    obj["tsl50Port"] = tsl50_port;
+    obj["tsl50Transport"] = tsl50_transport;
+    obj["tsl50Screen"] = tsl50_screen;
+    obj["tsl50Index"] = tsl50_index;
+    obj["tsl50Name"] = tsl50_name;
+    obj["oscCuePort"] = osccue_port;
+    obj["oscCueStation"] = osccue_station_id;
+    obj["oscCueBanner"] = osccue_banner;
+    obj["oscCueMessage"] = osccue_message;
+    obj["oscCueState"] = osccue_state;
+    obj["oscCueAckDone"] = osccue_ack_done;
+    obj["wifiDisabledForEth"] = wifiDisabledForEth;
     obj["presenterCueActive"] = presenterCueActive;
     obj["host"] = tallyarbiter_host;
     obj["port"] = tallyarbiter_port;
@@ -1640,7 +2154,10 @@ void setupWebServer() {
       cuesystem_channel = request->getParam("cue_channel", true)->value().toInt();
     }
 
-    // NMOS IS-07 settings (Program, Preview, Aux)
+    // NMOS IS-07 settings (Program, Preview, Aux & Auto-Discovery)
+    if (request->hasParam("nmos_autodisc", true)) {
+      nmos_auto_discover = (request->getParam("nmos_autodisc", true)->value() == "1");
+    }
     if (request->hasParam("nmos_host", true)) {
       nmos_registry_host = request->getParam("nmos_host", true)->value();
     }
@@ -1658,6 +2175,42 @@ void setupWebServer() {
     }
     if (request->hasParam("nmos_aux_topic", true)) {
       nmos_aux_topic = request->getParam("nmos_aux_topic", true)->value();
+    }
+
+    // TSL 3.1 settings
+    if (request->hasParam("tsl31_port", true)) {
+      tsl31_port = request->getParam("tsl31_port", true)->value().toInt();
+    }
+    if (request->hasParam("tsl31_trans", true)) {
+      tsl31_transport = request->getParam("tsl31_trans", true)->value();
+    }
+    if (request->hasParam("tsl31_addr", true)) {
+      tsl31_address = request->getParam("tsl31_addr", true)->value().toInt();
+    }
+
+    // TSL 5.0 settings
+    if (request->hasParam("tsl50_port", true)) {
+      tsl50_port = request->getParam("tsl50_port", true)->value().toInt();
+    }
+    if (request->hasParam("tsl50_trans", true)) {
+      tsl50_transport = request->getParam("tsl50_trans", true)->value();
+    }
+    if (request->hasParam("tsl50_screen", true)) {
+      tsl50_screen = request->getParam("tsl50_screen", true)->value().toInt();
+    }
+    if (request->hasParam("tsl50_idx", true)) {
+      tsl50_index = request->getParam("tsl50_idx", true)->value().toInt();
+    }
+
+    // OSC Cue Light settings
+    if (request->hasParam("osccue_port", true)) {
+      osccue_port = request->getParam("osccue_port", true)->value().toInt();
+    }
+    if (request->hasParam("osccue_station", true)) {
+      osccue_station_id = request->getParam("osccue_station", true)->value();
+    }
+    if (request->hasParam("osccue_banner", true)) {
+      osccue_banner = request->getParam("osccue_banner", true)->value();
     }
 
     // rtpMIDI settings
@@ -1737,12 +2290,23 @@ void setupWebServer() {
     preferences.putString("cueHost", cuesystem_host);
     preferences.putInt("cuePort", cuesystem_port);
     preferences.putInt("cueChan", cuesystem_channel);
+    preferences.putBool("nmosAutoDisc", nmos_auto_discover);
     preferences.putString("nmosHost", nmos_registry_host);
     preferences.putInt("nmosPort", nmos_registry_port);
     preferences.putString("nmosSrc", nmos_source_id);
     preferences.putString("nmosPrg", nmos_program_topic);
     preferences.putString("nmosPvw", nmos_preview_topic);
     preferences.putString("nmosAux", nmos_aux_topic);
+    preferences.putInt("tsl31Port", tsl31_port);
+    preferences.putString("tsl31Trans", tsl31_transport);
+    preferences.putInt("tsl31Addr", tsl31_address);
+    preferences.putInt("tsl50Port", tsl50_port);
+    preferences.putString("tsl50Trans", tsl50_transport);
+    preferences.putInt("tsl50Screen", tsl50_screen);
+    preferences.putInt("tsl50Idx", tsl50_index);
+    preferences.putInt("oscCuePort", osccue_port);
+    preferences.putString("oscCueStation", osccue_station_id);
+    preferences.putString("oscCueBanner", osccue_banner);
     preferences.putInt("midiPort", rtpmidi_port);
     preferences.putInt("midiChan", rtpmidi_channel);
     preferences.putInt("midiTrig", rtpmidi_trigger_type);
@@ -1767,8 +2331,36 @@ void setupWebServer() {
     // Reapply IP configuration immediately
     applyNetworkIPConfig();
 
+    // Configure TCP Server if required
+    if (operatingMode == "TSL_31" && tsl31_transport == "TCP") {
+      setupTSLTcpServer(tsl31_port);
+    } else if (operatingMode == "TSL_50" && tsl50_transport == "TCP") {
+      setupTSLTcpServer(tsl50_port);
+    } else if (tslTcpServer != nullptr) {
+      tslTcpServer->end();
+      delete tslTcpServer;
+      tslTcpServer = nullptr;
+    }
+
+    // Configure UDP Listener Port
+    if (networkConnected) {
+      uint16_t listenPort = atoi(tallyarbiter_TSLport);
+      if (isETCCueSystem()) listenPort = cuesystem_port;
+      else if (isRTPMidi()) listenPort = rtpmidi_port;
+      else if (isOSC()) listenPort = osc_port;
+      else if (isTSL31Listener()) listenPort = tsl31_port;
+      else if (isTSL50Listener()) listenPort = tsl50_port;
+      else if (isOSCCueLight()) listenPort = osccue_port;
+      udp.stop();
+      udp.begin(listenPort);
+
+      if (isNMOSIS07() && nmos_auto_discover) {
+        discoverNMOSRegistrationServer();
+      }
+    }
+
     // Re-register mDNS TXT records
-    MDNS.addServiceTxt("cuelx-tally", "udp", "role", isPresenter() ? "presenter" : (isTP() ? "tp" : (isETCCueSystem() ? "cue" : "nmos")));
+    MDNS.addServiceTxt("cuelx-tally", "udp", "role", isPresenter() ? "presenter" : (isTP() ? "tp" : (isETCCueSystem() ? "cue" : (isRTPMidi() ? "midi" : (isOSC() ? "osc" : (isTSL31Listener() ? "tsl31" : (isTSL50Listener() ? "tsl50" : (isOSCCueLight() ? "osccue" : "nmos"))))))));
     MDNS.addServiceTxt("cuelx-tally", "udp", "mode", operatingMode.c_str());
     MDNS.addServiceTxt("cuelx-tally", "udp", "group", pairingGroup.c_str());
     MDNS.addServiceTxt("cuelx-tally", "udp", "name", listenerDeviceName.c_str());
@@ -1854,12 +2446,23 @@ void setup() {
   if (preferences.getString("cueHost").length() > 0) cuesystem_host = preferences.getString("cueHost");
   if (preferences.isKey("cuePort")) cuesystem_port = preferences.getInt("cuePort", 4000);
   if (preferences.isKey("cueChan")) cuesystem_channel = preferences.getInt("cueChan", 1);
+  if (preferences.isKey("nmosAutoDisc")) nmos_auto_discover = preferences.getBool("nmosAutoDisc", true);
   if (preferences.getString("nmosHost").length() > 0) nmos_registry_host = preferences.getString("nmosHost");
   if (preferences.isKey("nmosPort")) nmos_registry_port = preferences.getInt("nmosPort", 8235);
   if (preferences.getString("nmosSrc").length() > 0) nmos_source_id = preferences.getString("nmosSrc");
   if (preferences.getString("nmosPrg").length() > 0) nmos_program_topic = preferences.getString("nmosPrg");
   if (preferences.getString("nmosPvw").length() > 0) nmos_preview_topic = preferences.getString("nmosPvw");
   if (preferences.getString("nmosAux").length() > 0) nmos_aux_topic = preferences.getString("nmosAux");
+  if (preferences.isKey("tsl31Port")) tsl31_port = preferences.getInt("tsl31Port", 8910);
+  if (preferences.getString("tsl31Trans").length() > 0) tsl31_transport = preferences.getString("tsl31Trans");
+  if (preferences.isKey("tsl31Addr")) tsl31_address = preferences.getInt("tsl31Addr", 0);
+  if (preferences.isKey("tsl50Port")) tsl50_port = preferences.getInt("tsl50Port", 8900);
+  if (preferences.getString("tsl50Trans").length() > 0) tsl50_transport = preferences.getString("tsl50Trans");
+  if (preferences.isKey("tsl50Screen")) tsl50_screen = preferences.getInt("tsl50Screen", 0);
+  if (preferences.isKey("tsl50Idx")) tsl50_index = preferences.getInt("tsl50Idx", 0);
+  if (preferences.isKey("oscCuePort")) osccue_port = preferences.getInt("oscCuePort", 53000);
+  if (preferences.getString("oscCueStation").length() > 0) osccue_station_id = preferences.getString("oscCueStation");
+  if (preferences.getString("oscCueBanner").length() > 0) osccue_banner = preferences.getString("oscCueBanner");
   if (preferences.isKey("midiPort")) rtpmidi_port = preferences.getInt("midiPort", 5004);
   if (preferences.isKey("midiChan")) rtpmidi_channel = preferences.getInt("midiChan", 1);
   if (preferences.isKey("midiTrig")) rtpmidi_trigger_type = preferences.getInt("midiTrig", 0);
@@ -1890,6 +2493,13 @@ void setup() {
     listenerDeviceName += macSuffix;
   }
 
+  // If TCP listener configured, start TCP server
+  if (operatingMode == "TSL_31" && tsl31_transport == "TCP") {
+    setupTSLTcpServer(tsl31_port);
+  } else if (operatingMode == "TSL_50" && tsl50_transport == "TCP") {
+    setupTSLTcpServer(tsl50_port);
+  }
+
   // 1. Setup Ethernet Network Event Handlers BEFORE ETH.begin()
   WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info) {
     switch (event) {
@@ -1908,7 +2518,13 @@ void setup() {
           if (isETCCueSystem()) listenPort = cuesystem_port;
           else if (isRTPMidi()) listenPort = rtpmidi_port;
           else if (isOSC()) listenPort = osc_port;
+          else if (isTSL31Listener()) listenPort = tsl31_port;
+          else if (isTSL50Listener()) listenPort = tsl50_port;
+          else if (isOSCCueLight()) listenPort = osccue_port;
           udp.begin(listenPort);
+          if (isNMOSIS07() && nmos_auto_discover) {
+            discoverNMOSRegistrationServer();
+          }
         }
         if (usesTallyArbiter()) {
           connectToServer();
@@ -1955,7 +2571,13 @@ void setup() {
       if (isETCCueSystem()) listenPort = cuesystem_port;
       else if (isRTPMidi()) listenPort = rtpmidi_port;
       else if (isOSC()) listenPort = osc_port;
+      else if (isTSL31Listener()) listenPort = tsl31_port;
+      else if (isTSL50Listener()) listenPort = tsl50_port;
+      else if (isOSCCueLight()) listenPort = osccue_port;
       udp.begin(listenPort);
+      if (isNMOSIS07() && nmos_auto_discover) {
+        discoverNMOSRegistrationServer();
+      }
       if (usesTallyArbiter()) {
         connectToServer();
       }
@@ -1989,9 +2611,9 @@ void setup() {
   if (MDNS.begin(mdnsdotlocalurl.c_str())) {
     MDNS.addService("CueLX", "tcp", 80);
     MDNS.addService("http", "tcp", 80);
-    uint16_t mDnsPort = isETCCueSystem() ? cuesystem_port : (isRTPMidi() ? rtpmidi_port : (isOSC() ? osc_port : atoi(tallyarbiter_TSLport)));
+    uint16_t mDnsPort = isETCCueSystem() ? cuesystem_port : (isRTPMidi() ? rtpmidi_port : (isOSC() ? osc_port : (isTSL31Listener() ? tsl31_port : (isTSL50Listener() ? tsl50_port : (isOSCCueLight() ? osccue_port : atoi(tallyarbiter_TSLport))))));
     MDNS.addService("cuelx-tally", "udp", mDnsPort);
-    MDNS.addServiceTxt("cuelx-tally", "udp", "role", isPresenter() ? "presenter" : (isTP() ? "tp" : (isETCCueSystem() ? "cue" : (isRTPMidi() ? "midi" : (isOSC() ? "osc" : "nmos")))));
+    MDNS.addServiceTxt("cuelx-tally", "udp", "role", isPresenter() ? "presenter" : (isTP() ? "tp" : (isETCCueSystem() ? "cue" : (isRTPMidi() ? "midi" : (isOSC() ? "osc" : (isTSL31Listener() ? "tsl31" : (isTSL50Listener() ? "tsl50" : (isOSCCueLight() ? "osccue" : "nmos"))))))));
     MDNS.addServiceTxt("cuelx-tally", "udp", "mode", operatingMode.c_str());
     MDNS.addServiceTxt("cuelx-tally", "udp", "group", pairingGroup.c_str());
     MDNS.addServiceTxt("cuelx-tally", "udp", "name", listenerDeviceName.c_str());
@@ -2021,7 +2643,14 @@ void loop() {
   espConnect.loop();
   ArduinoOTA.handle();
 
-  // 1. Process incoming packets with sub-millisecond latency (TSL 3.1 UDP, ETC, NMOS, rtpMIDI, OSC)
+  // 0. Ethernet Precedence: Disable Wi-Fi when PoE Ethernet is active (Requirement 4)
+  static unsigned long lastEthPrecedenceCheck = 0;
+  if (millis() - lastEthPrecedenceCheck >= 500) {
+    lastEthPrecedenceCheck = millis();
+    checkEthernetWifiPrecedence();
+  }
+
+  // 1. Process incoming packets with sub-millisecond latency (TSL 3.1 UDP, ETC, NMOS, rtpMIDI, OSC, OSC Cue Light)
   processIncomingTSL();
 
   // 2. Handle flash effect if requested by Tally Arbiter
@@ -2075,11 +2704,13 @@ void loop() {
     }
   }
 
-  // 4. Smooth Flashing (ETC Standby, rtpMIDI/OSC Flash Red) & OSC text ticker
+  // 4. Smooth Flashing (ETC Standby, rtpMIDI/OSC Flash Red, OSC Cue Light standby_ack) & OSC text ticker
   static unsigned long lastFlashTickerTime = 0;
   bool isFlashing = (isETCCueSystem() && actualType == "\"standby\"" && !cuesystem_ack_active) ||
-                    (actualType == "\"flashred\"");
-  bool isTicker = (isOSC() && osc_custom_message.length() > 9);
+                    (actualType == "\"flashred\"") ||
+                    (isOSCCueLight() && osccue_state == "standby_ack" && !osccue_ack_done);
+  bool isTicker = (isOSC() && osc_custom_message.length() > 9) ||
+                  ((isTSL31Listener() || isTSL50Listener()) && (isTSL31Listener() ? tsl31_name : tsl50_name).length() > 9);
 
   if (isFlashing) {
     if (millis() - lastFlashTickerTime >= 200) {
@@ -2101,6 +2732,13 @@ void loop() {
       cuesystem_ack_active = true;
       if (networkConnected) {
         sendCueAck();
+      }
+      renderScreen();
+    } else if (isOSCCueLight()) {
+      logger(String("[Button] OSC Cue Light ACK pressed for station ") + osccue_station_id, "info");
+      osccue_ack_done = true;
+      if (networkConnected) {
+        sendOSCCueLightState("ack");
       }
       renderScreen();
     } else if (isNMOSIS07()) {
@@ -2126,6 +2764,10 @@ void loop() {
       logger("[Button] OSC Test Toggle pressed", "info");
       osc_active_red = !osc_active_red;
       evaluateOSCState();
+      renderScreen();
+    } else if (isTSL31Listener() || isTSL50Listener()) {
+      logger("[Button] TSL Listener Info toggle pressed", "info");
+      currentScreen = (currentScreen == 0) ? 1 : 0;
       renderScreen();
     } else {
       logger(String("[Button] Single Click: Toggle Cue CH1 (") + (isPresenter() ? "Presenter Preview" : "TP Program") + ")", "info");
