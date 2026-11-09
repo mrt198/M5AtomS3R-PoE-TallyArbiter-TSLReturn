@@ -13,7 +13,8 @@ import {
   Radio,
   ExternalLink,
   Wrench,
-  AlertTriangle
+  AlertTriangle,
+  BookOpen
 } from 'lucide-react';
 import { AtomSimulator, SimulatorState } from './components/AtomSimulator';
 import { CodeViewer } from './components/CodeViewer';
@@ -21,10 +22,11 @@ import { DiffViewer } from './components/DiffViewer';
 import { WebPortalPreview } from './components/WebPortalPreview';
 import { HardwareSpecs } from './components/HardwareSpecs';
 import { ArduinoTroubleshooting } from './components/ArduinoTroubleshooting';
+import { UserManual } from './components/UserManual';
 import { CPP_FIRMWARE_SOURCE, PLATFORMIO_INI } from './data/firmwareSources';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'simulator' | 'code' | 'diff' | 'portal' | 'hardware' | 'troubleshooting'>('simulator');
+  const [activeTab, setActiveTab] = useState<'simulator' | 'code' | 'diff' | 'portal' | 'hardware' | 'troubleshooting' | 'manual'>('simulator');
   const [copiedAll, setCopiedAll] = useState(false);
 
   // Simulator State
@@ -53,6 +55,40 @@ export default function App() {
     staticGW: '192.168.1.1',
     staticDNS: '8.8.8.8',
     wifiDisabledForEth: false,
+    // Timezone & Clock (Item 1)
+    timezone: 'Europe/London',
+    customTZPosix: 'GMT0BST,M3.5.0/1,M10.5.0',
+    // MTC Reader (Item 4)
+    mtcReaderEnabled: false,
+    mtcTimecode: '01:00:00:00',
+    // AtomENV Sensor (Item 9)
+    envSensorEnabled: true,
+    envTemperature: 22.4,
+    envHumidity: 48.0,
+    envPressure: 1013.2,
+    // Promptside (Item 2)
+    promptsidePort: 8000,
+    promptsideChannel: 1,
+    promptsideWingLabel: 'Prompt Corner',
+    promptsideCueText: '',
+    promptsideState: 'off',
+    promptsideAckDone: false,
+    // MSC rtpMIDI (Item 3)
+    mscPort: 5004,
+    mscDeviceId: 1,
+    mscCmdFormat: 1,
+    mscCurrentCue: '1.0',
+    mscLastCommand: 'READY',
+    mscState: 'off',
+    // MIDI Button Return Action (Item 6)
+    midiBtnType: 1,
+    midiBtnChannel: 1,
+    midiBtnNumber: 60,
+    midiBtnPress: 127,
+    midiBtnRelease: 0,
+    // P2P Heartbeat & Disconnect (Item 7)
+    p2pDisconnected: false,
+    p2pMissed: 0,
     nmosAutoDiscover: true,
     tsl31Port: 8910,
     tsl31Transport: 'UDP',
@@ -205,6 +241,31 @@ export default function App() {
       setLastTslPacket({
         hex,
         decoded: `rtpMIDI AppleMIDI (UDP ${simState.rtpMidiPort}) Ch:${simState.rtpMidiChannel} ${live ? 'NoteOn' : 'NoteOff'} Note:${simState.rtpMidiNumRed} Vel:${live ? 127 : 0}`,
+        timestamp: timeStr,
+        channel: 1,
+        live
+      });
+      return;
+    }
+
+    if (simState.operatingMode === 'Promptside') {
+      const addr = `/promptside/channel/${channel}/ack`;
+      const hex = Array.from(addr).map(c => c.charCodeAt(0).toString(16).padStart(2, '0').toUpperCase()).join(' ');
+      setLastTslPacket({
+        hex: `${hex} 2C 69 00 00 00 00 00 01`,
+        decoded: `Promptside Outstation ACK (UDP ${simState.promptsidePort}): ${addr} [i: 1] -> Promptside Host`,
+        timestamp: timeStr,
+        channel,
+        live
+      });
+      return;
+    }
+
+    if (simState.operatingMode === 'MSC_RTP_MIDI') {
+      const hex = `F0 7F ${simState.mscDeviceId.toString(16).padStart(2, '0').toUpperCase()} 02 01 01 F7`;
+      setLastTslPacket({
+        hex,
+        decoded: `MSC / rtpMIDI Button Return: Dev:${simState.mscDeviceId} Ch:${simState.midiBtnChannel} Num:${simState.midiBtnNumber} PressVal:${simState.midiBtnPress}`,
         timestamp: timeStr,
         channel: 1,
         live
@@ -437,6 +498,22 @@ export default function App() {
               Fix
             </span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('manual')}
+            className={`py-2.5 px-3.5 rounded-t-lg font-semibold flex items-center gap-2 transition-colors border-b-2 cursor-pointer ${
+              activeTab === 'manual'
+                ? 'border-sky-500 text-white bg-neutral-850'
+                : 'border-transparent text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900'
+            }`}
+          >
+            <BookOpen className="w-3.5 h-3.5 text-sky-400" />
+            <span>User Manual &amp; Docs</span>
+            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-sky-950 text-sky-300 border border-sky-800">
+              13 Modes
+            </span>
+          </button>
         </div>
       </header>
 
@@ -465,6 +542,8 @@ export default function App() {
         {activeTab === 'hardware' && <HardwareSpecs />}
 
         {activeTab === 'troubleshooting' && <ArduinoTroubleshooting />}
+
+        {activeTab === 'manual' && <UserManual />}
       </main>
 
       {/* Footer */}

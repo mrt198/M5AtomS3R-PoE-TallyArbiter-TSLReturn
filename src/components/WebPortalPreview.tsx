@@ -95,6 +95,31 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
   const [formOscPrefix, setFormOscPrefix] = useState(state.oscPrefix);
   const [formOscMessage, setFormOscMessage] = useState(state.oscCustomMessage);
 
+  // Timezone & POSIX TZ (Item 1)
+  const [formTimezone, setFormTimezone] = useState(state.timezone);
+  const [formCustomTZPosix, setFormCustomTZPosix] = useState(state.customTZPosix);
+
+  // Global Features (Items 4 & 9)
+  const [formMtcReader, setFormMtcReader] = useState(state.mtcReaderEnabled);
+  const [formEnvSensor, setFormEnvSensor] = useState(state.envSensorEnabled);
+
+  // Promptside (Item 2)
+  const [formPromptsidePort, setFormPromptsidePort] = useState(state.promptsidePort);
+  const [formPromptsideChannel, setFormPromptsideChannel] = useState(state.promptsideChannel);
+  const [formPromptsideWingLabel, setFormPromptsideWingLabel] = useState(state.promptsideWingLabel);
+
+  // MSC rtpMIDI (Item 3)
+  const [formMscPort, setFormMscPort] = useState(state.mscPort);
+  const [formMscDeviceId, setFormMscDeviceId] = useState(state.mscDeviceId);
+  const [formMscCmdFormat, setFormMscCmdFormat] = useState(state.mscCmdFormat);
+
+  // MIDI Button Return Feedback Action (Item 6)
+  const [formMidiBtnType, setFormMidiBtnType] = useState(state.midiBtnType);
+  const [formMidiBtnChannel, setFormMidiBtnChannel] = useState(state.midiBtnChannel);
+  const [formMidiBtnNumber, setFormMidiBtnNumber] = useState(state.midiBtnNumber);
+  const [formMidiBtnPress, setFormMidiBtnPress] = useState(state.midiBtnPress);
+  const [formMidiBtnRelease, setFormMidiBtnRelease] = useState(state.midiBtnRelease);
+
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [discoveredPeers, setDiscoveredPeers] = useState<DiscoveredPeer[] | null>(null);
@@ -109,6 +134,10 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
       staticMask: formStaticMask,
       staticGW: formStaticGW,
       staticDNS: formStaticDNS,
+      timezone: formTimezone,
+      customTZPosix: formCustomTZPosix,
+      mtcReaderEnabled: formMtcReader,
+      envSensorEnabled: formEnvSensor,
       pairingGroup: formGroup,
       pairedTargetIP: formPeerIp,
       pairedTargetName: formPeerName,
@@ -136,6 +165,17 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
       oscCuePort: formOscCuePort,
       oscCueStation: formOscCueStation,
       oscCueBanner: formOscCueBanner,
+      promptsidePort: formPromptsidePort,
+      promptsideChannel: formPromptsideChannel,
+      promptsideWingLabel: formPromptsideWingLabel,
+      mscPort: formMscPort,
+      mscDeviceId: formMscDeviceId,
+      mscCmdFormat: formMscCmdFormat,
+      midiBtnType: formMidiBtnType,
+      midiBtnChannel: formMidiBtnChannel,
+      midiBtnNumber: formMidiBtnNumber,
+      midiBtnPress: formMidiBtnPress,
+      midiBtnRelease: formMidiBtnRelease,
       rtpMidiPort: formRtpPort,
       rtpMidiChannel: formRtpChannel,
       rtpMidiTriggerType: formRtpTriggerType,
@@ -307,6 +347,8 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
                   <option value="TSL_31">TSL 3.1 Listener (UDP/TCP with centered name)</option>
                   <option value="TSL_50">TSL 5.0 Listener (UDP/TCP with centered name)</option>
                   <option value="OSC_CueLight">OSC Cue Light (RSMCK iOS Protocol - Port 53000)</option>
+                  <option value="Promptside">Promptside (Theatrical Cue Light - UDP 8000)</option>
+                  <option value="MSC_RTP_MIDI">MIDI Show Control (MSC over rtpMIDI - UDP 5004)</option>
                   <option value="ETC_CueSystem">ETC CueSystem (Stage Cue Light Outstation)</option>
                   <option value="NMOS_IS07">NMOS IS-07 Event &amp; Tally (SMPTE ST 2110)</option>
                   <option value="RTP_MIDI">rtpMIDI / AppleMIDI Outstation (6 Colors with Priority)</option>
@@ -315,11 +357,13 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
                 <p className="text-[11px] text-neutral-400 mt-1">
                   {formMode === 'Presenter' && 'Button click transmits Green TSL Preview cue (0x31) back to Tally Arbiter.'}
                   {formMode === 'TP' && 'Button click transmits Red TSL Program tally (0x32) back to Tally Arbiter.'}
-                  {formMode === 'TP_P2P' && 'Direct P2P Master: Toggles Program to paired Presenter; receives cue calls from Presenter.'}
-                  {formMode === 'Presenter_P2P' && 'Direct P2P Slave: Displays TP Program/Preview tally; button press cues paired TP.'}
+                  {formMode === 'TP_P2P' && 'Direct P2P Master: Toggles Program to paired Presenter; 250ms heartbeat with disconnect alarm.'}
+                  {formMode === 'Presenter_P2P' && 'Direct P2P Slave: Displays TP Program/Preview tally; 250ms heartbeat with disconnect alarm.'}
                   {formMode === 'TSL_31' && 'Standard TSL 3.1 UMD listener via UDP/TCP. Displays tally and centers name prominently on 128x128 LCD.'}
                   {formMode === 'TSL_50' && 'TSL 5.0 binary protocol via UDP/TCP. Filters by Screen & Index, displaying centered camera name.'}
                   {formMode === 'OSC_CueLight' && 'RSMCK OSC Cue Light for iOS on UDP 53000. Supports /standby_ack, /standby, /go, /off & /banner.'}
+                  {formMode === 'Promptside' && 'Promptside theatrical cue system on UDP 8000: Flashing Red Standby, Screen ACK to Solid Red, Green GO, cue notes.'}
+                  {formMode === 'MSC_RTP_MIDI' && 'RP-002 MIDI Show Control over AppleMIDI: GO (green), STOP (red), STANDBY+ (flash red), displays cue numbers.'}
                   {formMode === 'ETC_CueSystem' && 'Stage cue light outstation: Standby flashes Red; button press confirms ACK (solid Red); Go displays Green.'}
                   {formMode === 'NMOS_IS07' && 'AMWA NMOS IS-07: Emits state events for Program, Preview and Aux endpoints over ST 2110.'}
                   {formMode === 'RTP_MIDI' && 'AppleMIDI / rtpMIDI on UDP 5004. Priority: Red > Flashing Red > Green > Yellow > Blue > White.'}
@@ -410,6 +454,103 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* Timezone & Clock Configuration Section (Item 1) */}
+              <div className="p-4 bg-neutral-900/90 rounded-xl border border-neutral-700/80 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold text-neutral-200 uppercase tracking-wider flex items-center gap-1.5">
+                    <Globe className="w-3.5 h-3.5 text-blue-400" />
+                    <span>Timezone &amp; SNTP Clock Configuration</span>
+                  </h3>
+                  <span className="text-[11px] font-mono text-neutral-400">
+                    Auto-DST Rules
+                  </span>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-neutral-400 mb-1">
+                    System Timezone
+                  </label>
+                  <select
+                    value={formTimezone}
+                    onChange={(e) => setFormTimezone(e.target.value)}
+                    className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-sky-500 cursor-pointer"
+                  >
+                    <option value="Europe/London">Europe/London (GMT/BST - UK Royal Opera House)</option>
+                    <option value="UTC">UTC (Coordinated Universal Time)</option>
+                    <option value="America/New_York">America/New_York (US Eastern Time)</option>
+                    <option value="America/Chicago">America/Chicago (US Central Time)</option>
+                    <option value="America/Denver">America/Denver (US Mountain Time)</option>
+                    <option value="America/Los_Angeles">America/Los_Angeles (US Pacific Time)</option>
+                    <option value="Europe/Paris">Europe/Paris (CET/CEST - Paris, Berlin, Rome)</option>
+                    <option value="Asia/Tokyo">Asia/Tokyo (JST - Japan)</option>
+                    <option value="Australia/Sydney">Australia/Sydney (AEST/AEDT)</option>
+                    <option value="Custom">Custom POSIX TZ String</option>
+                  </select>
+                </div>
+
+                {formTimezone === 'Custom' && (
+                  <div className="pt-2 border-t border-neutral-800">
+                    <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                      POSIX TZ Rule String
+                    </label>
+                    <input
+                      type="text"
+                      value={formCustomTZPosix}
+                      onChange={(e) => setFormCustomTZPosix(e.target.value)}
+                      placeholder="GMT0BST,M3.5.0/1,M10.5.0"
+                      className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-sky-500"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Global Hardware Extensions (Items 4 & 9) */}
+              <div className="p-4 bg-neutral-900/90 rounded-xl border border-neutral-700/80 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold text-neutral-200 uppercase tracking-wider flex items-center gap-1.5">
+                    <Radio className="w-3.5 h-3.5 text-purple-400" />
+                    <span>Global Hardware &amp; Diagnostic Options</span>
+                  </h3>
+                  <span className="text-[11px] font-mono text-neutral-400">
+                    Add-ons &amp; Readers
+                  </span>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-start gap-3 p-2.5 bg-neutral-950 rounded-lg border border-neutral-800">
+                    <input
+                      type="checkbox"
+                      id="mtcReader"
+                      checked={formMtcReader}
+                      onChange={(e) => setFormMtcReader(e.target.checked)}
+                      className="mt-0.5 rounded border-neutral-700 text-amber-500 focus:ring-amber-500"
+                    />
+                    <label htmlFor="mtcReader" className="text-xs font-medium text-neutral-200 cursor-pointer">
+                      <div>MTC (MIDI Time Code) Reader over rtpMIDI</div>
+                      <div className="text-[11px] text-neutral-400 font-normal">
+                        Replaces the default SNTP clock display on Screen 0 with incoming SMPTE timecode (<code>HH:MM:SS:FF</code>) parsed from rtpMIDI quarter-frames (<code>0xF1</code>) and full-frame SysEx.
+                      </div>
+                    </label>
+                  </div>
+
+                  <div className="flex items-start gap-3 p-2.5 bg-neutral-950 rounded-lg border border-neutral-800">
+                    <input
+                      type="checkbox"
+                      id="envSensor"
+                      checked={formEnvSensor}
+                      onChange={(e) => setFormEnvSensor(e.target.checked)}
+                      className="mt-0.5 rounded border-neutral-700 text-emerald-500 focus:ring-emerald-500"
+                    />
+                    <label htmlFor="envSensor" className="text-xs font-medium text-neutral-200 cursor-pointer">
+                      <div>Enable M5Stack AtomENV Grove Sensor (SHT30 + BMP280)</div>
+                      <div className="text-[11px] text-neutral-400 font-normal">
+                        Monitors rack/stage ambient Temperature, Relative Humidity, and Barometric Pressure on Grove I2C (SDA: GPIO 2, SCL: GPIO 1). Exposes live REST API at <code>GET /api/env</code>.
+                      </div>
+                    </label>
+                  </div>
+                </div>
               </div>
 
               {/* MODE AWARE SECTION: Tally Arbiter */}
@@ -1029,6 +1170,201 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
                       Received dynamically via OSC address <code>{formOscPrefix}/text &quot;message&quot;</code> or <code>/message &quot;text&quot;</code>.
                     </p>
                   </div>
+                </div>
+              )}
+
+              {/* MODE AWARE SECTION: Promptside Theatrical Cue Light (Item 2) */}
+              {formMode === 'Promptside' && (
+                <div className="p-4 bg-neutral-900/90 rounded-xl border border-amber-900/50 space-y-3">
+                  <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Theater className="w-3.5 h-3.5" />
+                    <span>Promptside Theatrical Cue System Parameters</span>
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                        Promptside Port (Default: 8000)
+                      </label>
+                      <input
+                        type="number"
+                        value={formPromptsidePort}
+                        onChange={(e) => setFormPromptsidePort(parseInt(e.target.value) || 8000)}
+                        placeholder="8000"
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                        Channel Number
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="64"
+                        value={formPromptsideChannel}
+                        onChange={(e) => setFormPromptsideChannel(parseInt(e.target.value) || 1)}
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                        Wing / Outstation Label
+                      </label>
+                      <input
+                        type="text"
+                        value={formPromptsideWingLabel}
+                        onChange={(e) => setFormPromptsideWingLabel(e.target.value)}
+                        placeholder="Prompt Corner"
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-cyan-400 font-bold"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-neutral-400">
+                    Listens on UDP for <code>/promptside/channel/{formPromptsideChannel}/standby</code> (Flashing Red), <code>/go</code> (Solid Green), <code>/off</code>, and <code>/text</code> notes. Button press returns <code>/promptside/channel/{formPromptsideChannel}/ack 1</code>.
+                  </p>
+                </div>
+              )}
+
+              {/* MODE AWARE SECTION: MIDI Show Control (MSC over rtpMIDI) (Item 3) */}
+              {formMode === 'MSC_RTP_MIDI' && (
+                <div className="p-4 bg-neutral-900/90 rounded-xl border border-fuchsia-900/50 space-y-3">
+                  <h3 className="text-xs font-bold text-fuchsia-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Music className="w-3.5 h-3.5" />
+                    <span>MIDI Show Control (MSC over AppleMIDI) Parameters</span>
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                        AppleMIDI Port (Default: 5004)
+                      </label>
+                      <input
+                        type="number"
+                        value={formMscPort}
+                        onChange={(e) => setFormMscPort(parseInt(e.target.value) || 5004)}
+                        placeholder="5004"
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                        MSC Device ID (0-127, 127 = All-call)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="127"
+                        value={formMscDeviceId}
+                        onChange={(e) => setFormMscDeviceId(parseInt(e.target.value) || 0)}
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                        Command Format (0x01: Lighting, 0x7F: All)
+                      </label>
+                      <select
+                        value={formMscCmdFormat}
+                        onChange={(e) => setFormMscCmdFormat(parseInt(e.target.value) || 1)}
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white"
+                      >
+                        <option value={1}>0x01 - Lighting / General Cues</option>
+                        <option value={127}>0x7F - All Types (Broadcaster)</option>
+                        <option value={16}>0x10 - Sound Cues</option>
+                        <option value={32}>0x20 - Machinery / Rigging</option>
+                      </select>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-neutral-400">
+                    RP-002 standard SysEx show control. Automatically interprets <code>0x01</code> GO (green), <code>0x02</code> STOP (solid red), <code>0x0B</code> STANDBY+ (flashing red), and <code>0x08</code> ALL_OFF.
+                  </p>
+                </div>
+              )}
+
+              {/* MIDI BUTTON RETURN FEEDBACK CONFIGURATION (Item 6) */}
+              {(formMode === 'RTP_MIDI' || formMode === 'MSC_RTP_MIDI') && (
+                <div className="p-4 bg-neutral-900/90 rounded-xl border border-indigo-900/50 space-y-3">
+                  <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Radio className="w-3.5 h-3.5" />
+                    <span>MIDI Button Return Feedback Action</span>
+                  </h3>
+                  <p className="text-[11px] text-neutral-400">
+                    Configure what MIDI message is sent back over rtpMIDI / AppleMIDI when the performer or operator clicks the AtomS3R front screen:
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                        Action Type
+                      </label>
+                      <select
+                        value={formMidiBtnType}
+                        onChange={(e) => setFormMidiBtnType(parseInt(e.target.value) || 0)}
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white"
+                      >
+                        <option value={0}>Disabled / None</option>
+                        <option value={1}>Note On / Off (Momentary)</option>
+                        <option value={2}>Note Toggle (Alternate Press)</option>
+                        <option value={3}>Control Change CC (Momentary)</option>
+                        <option value={4}>Control Change CC (Toggle)</option>
+                        <option value={5}>Program Change (PC)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                        MIDI Channel (1-16)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="16"
+                        value={formMidiBtnChannel}
+                        onChange={(e) => setFormMidiBtnChannel(parseInt(e.target.value) || 1)}
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                        Note / CC / PC Number (0-127)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="127"
+                        value={formMidiBtnNumber}
+                        onChange={(e) => setFormMidiBtnNumber(parseInt(e.target.value) || 0)}
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white"
+                      />
+                    </div>
+                  </div>
+                  {formMidiBtnType !== 0 && (
+                    <div className="grid grid-cols-2 gap-3 pt-2 border-t border-neutral-800">
+                      <div>
+                        <label className="block text-[10.5px] font-medium text-neutral-400 mb-1">
+                          Press Velocity / Value (0-127)
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="127"
+                          value={formMidiBtnPress}
+                          onChange={(e) => setFormMidiBtnPress(parseInt(e.target.value) || 127)}
+                          className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1 text-xs font-mono text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10.5px] font-medium text-neutral-400 mb-1">
+                          Release Velocity / Value (0-127)
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="127"
+                          value={formMidiBtnRelease}
+                          onChange={(e) => setFormMidiBtnRelease(parseInt(e.target.value) || 0)}
+                          className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1 text-xs font-mono text-white"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

@@ -15,7 +15,9 @@ import {
   Volume2, 
   RotateCw,
   Compass,
-  MessageSquare
+  MessageSquare,
+  Cpu,
+  Clock
 } from 'lucide-react';
 
 export interface SimulatorState {
@@ -32,7 +34,7 @@ export interface SimulatorState {
   taPort: string;
   tslPort: string;
   flashActive: boolean;
-  operatingMode: 'TP' | 'Presenter' | 'TP_P2P' | 'Presenter_P2P' | 'ETC_CueSystem' | 'NMOS_IS07' | 'RTP_MIDI' | 'OSC' | 'TSL_31' | 'TSL_50' | 'OSC_CueLight';
+  operatingMode: 'TP' | 'Presenter' | 'TP_P2P' | 'Presenter_P2P' | 'ETC_CueSystem' | 'NMOS_IS07' | 'RTP_MIDI' | 'OSC' | 'TSL_31' | 'TSL_50' | 'OSC_CueLight' | 'Promptside' | 'MSC_RTP_MIDI';
   pairingGroup: string;
   pairedTargetIP: string;
   pairedTargetName: string;
@@ -44,6 +46,40 @@ export interface SimulatorState {
   staticGW: string;
   staticDNS: string;
   wifiDisabledForEth: boolean;
+  // Timezone & Clock Configuration (Item 1)
+  timezone: string;
+  customTZPosix: string;
+  // MTC (MIDI Time Code) Reader (Item 4)
+  mtcReaderEnabled: boolean;
+  mtcTimecode: string;
+  // M5Stack AtomENV Sensor (Item 9)
+  envSensorEnabled: boolean;
+  envTemperature: number;
+  envHumidity: number;
+  envPressure: number;
+  // Promptside Theatrical Cue System (Item 2)
+  promptsidePort: number;
+  promptsideChannel: number;
+  promptsideWingLabel: string;
+  promptsideCueText: string;
+  promptsideState: 'off' | 'standby_ack' | 'standby' | 'go';
+  promptsideAckDone: boolean;
+  // MIDI Show Control (MSC) over rtpMIDI (Item 3)
+  mscPort: number;
+  mscDeviceId: number;
+  mscCmdFormat: number;
+  mscCurrentCue: string;
+  mscLastCommand: string;
+  mscState: 'off' | 'standby' | 'standby+' | 'go';
+  // MIDI Button Return Feedback Action (Item 6)
+  midiBtnType: number; // 0: None, 1: Note Mom, 2: Note Tog, 3: CC Mom, 4: CC Tog, 5: PC
+  midiBtnChannel: number;
+  midiBtnNumber: number;
+  midiBtnPress: number;
+  midiBtnRelease: number;
+  // P2P Heartbeat & Disconnect Alarm (Item 7)
+  p2pDisconnected: boolean;
+  p2pMissed: number;
   // NMOS Auto Discovery
   nmosAutoDiscover: boolean;
   // TSL 3.1 Dedicated Listener (Item 2)
@@ -171,6 +207,13 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
       return { bg: 'bg-white', text: 'text-black', isDark: false, label: 'FLASH' };
     }
 
+    // 0. P2P Standalone Disconnect Alarm (Item 7: >4 heartbeats missed triggers yellow flashing)
+    if ((state.operatingMode === 'TP_P2P' || state.operatingMode === 'Presenter_P2P') && state.p2pDisconnected) {
+      return flashTick
+        ? { bg: 'bg-yellow-400', text: 'text-black', isDark: false, label: 'DISCONNECTED' }
+        : { bg: 'bg-neutral-950', text: 'text-yellow-400', isDark: true, label: 'DISCONNECTED' };
+    }
+
     // 1. ETC CueSystem Mode:
     // Standby = flashing red until acknowledged (solid red)
     if (state.operatingMode === 'ETC_CueSystem') {
@@ -277,6 +320,42 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
       return { bg: 'bg-neutral-950', text: 'text-white', isDark: true, label: 'OFF' };
     }
 
+    // 4.6 Promptside Theatrical Cue Light Mode (Item 2)
+    if (state.operatingMode === 'Promptside') {
+      if (state.promptsideState === 'standby_ack') {
+        if (!state.promptsideAckDone) {
+          return flashTick
+            ? { bg: 'bg-red-600', text: 'text-white', isDark: true, label: 'STANDBY (ACK)' }
+            : { bg: 'bg-neutral-950', text: 'text-red-500', isDark: true, label: 'STANDBY (ACK)' };
+        } else {
+          return { bg: 'bg-red-600', text: 'text-white', isDark: true, label: 'STANDBY (ACKED)' };
+        }
+      }
+      if (state.promptsideState === 'standby') {
+        return { bg: 'bg-red-600', text: 'text-white', isDark: true, label: 'STANDBY' };
+      }
+      if (state.promptsideState === 'go') {
+        return { bg: 'bg-emerald-500', text: 'text-black', isDark: false, label: 'GO!' };
+      }
+      return { bg: 'bg-neutral-950', text: 'text-white', isDark: true, label: 'OFF' };
+    }
+
+    // 4.7 MIDI Show Control (MSC) over rtpMIDI (Item 3)
+    if (state.operatingMode === 'MSC_RTP_MIDI') {
+      if (state.mscState === 'go') {
+        return { bg: 'bg-emerald-500', text: 'text-black', isDark: false, label: 'GO!' };
+      }
+      if (state.mscState === 'standby+') {
+        return flashTick
+          ? { bg: 'bg-red-600', text: 'text-white', isDark: true, label: 'STANDBY+' }
+          : { bg: 'bg-neutral-950', text: 'text-red-500', isDark: true, label: 'STANDBY+' };
+      }
+      if (state.mscState === 'standby') {
+        return { bg: 'bg-red-600', text: 'text-white', isDark: true, label: 'STOP / STBY' };
+      }
+      return { bg: 'bg-neutral-950', text: 'text-white', isDark: true, label: 'OFF' };
+    }
+
     // 5. Standard TSL / Tally Arbiter / P2P / TSL 3.1 & 5.0 Listener Modes
     switch (state.tallyState) {
       case 'program':
@@ -336,6 +415,10 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
       const timer = setTimeout(() => {
         // Single click: Mode-aware action
         setState(prev => {
+          if (prev.operatingMode === 'Promptside') {
+            onSendTslPacket(prev.promptsideChannel, true);
+            return { ...prev, promptsideAckDone: true };
+          }
           if (prev.operatingMode === 'ETC_CueSystem') {
             const nextAck = !prev.cueAckActive;
             return { ...prev, cueAckActive: nextAck };
@@ -347,6 +430,11 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
           if (prev.operatingMode === 'NMOS_IS07') {
             const nextLive = !prev.nmosOnAir;
             return { ...prev, nmosOnAir: nextLive };
+          }
+          if (prev.operatingMode === 'RTP_MIDI' || prev.operatingMode === 'MSC_RTP_MIDI') {
+            onSendTslPacket(prev.midiBtnNumber, true);
+            const nextCue = !prev.isCueActive;
+            return { ...prev, isCueActive: nextCue };
           }
           const nextCue = !prev.isCueActive;
           onSendTslPacket(1, nextCue);
@@ -378,6 +466,15 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
 
   // Determine displayed name on screen
   const getDisplayName = () => {
+    if ((state.operatingMode === 'TP_P2P' || state.operatingMode === 'Presenter_P2P') && state.p2pDisconnected) {
+      return 'PEER LOST';
+    }
+    if (state.operatingMode === 'Promptside') {
+      return state.promptsideCueText || (state.promptsideState === 'go' ? 'GO!' : state.promptsideState.startsWith('standby') ? 'STANDBY' : 'OFF');
+    }
+    if (state.operatingMode === 'MSC_RTP_MIDI') {
+      return state.mscCurrentCue ? `CUE ${state.mscCurrentCue}` : (state.mscState === 'go' ? 'GO!' : state.mscState === 'standby+' ? 'STANDBY+' : state.mscState === 'standby' ? 'STOP' : 'STANDBY');
+    }
     if (state.operatingMode === 'TSL_31') {
       return state.tsl31Name || 'CAM 1';
     }
@@ -474,8 +571,21 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                   {state.currentScreen === 0 ? (
                     // Screen 0: Tally & Cue
                     <div className="w-full h-full p-2 flex flex-col justify-between text-left font-mono">
-                      {/* Top Header: For OSC Cue Light show persistent Banner; else show Clock */}
-                      {state.operatingMode === 'OSC_CueLight' ? (
+                      {/* Top Header: MTC Timecode (if MTC Reader enabled), Promptside Wing label, OSC Cue Banner, or Clock */}
+                      {state.mtcReaderEnabled ? (
+                        <div className="w-full bg-black text-amber-400 border border-neutral-700/80 rounded py-0.5 px-1 text-center shadow-md">
+                          <div className="text-[10px] sm:text-xs font-mono font-bold tracking-widest leading-none text-amber-400 flex items-center justify-center gap-1">
+                            <span className="text-[7.5px] px-1 py-0.2 bg-amber-950 text-amber-300 rounded border border-amber-800">MTC</span>
+                            <span>{state.mtcTimecode || '00:00:00:00'}</span>
+                          </div>
+                        </div>
+                      ) : state.operatingMode === 'Promptside' ? (
+                        <div className="w-full bg-black text-cyan-400 border border-neutral-700/80 rounded py-0.5 px-1 text-center shadow-md">
+                          <div className="text-[10px] font-mono font-bold tracking-wider leading-tight uppercase truncate">
+                            {state.promptsideWingLabel || `PROMPTSIDE CH ${state.promptsideChannel}`}
+                          </div>
+                        </div>
+                      ) : state.operatingMode === 'OSC_CueLight' ? (
                         <div className="w-full bg-black text-cyan-400 border border-neutral-700/80 rounded py-0.5 px-1 text-center shadow-md">
                           <div className="text-[11px] font-mono font-bold tracking-wider leading-tight uppercase truncate">
                             {state.oscCueBanner || 'CUE LIGHT'}
@@ -526,6 +636,16 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                             [ACKNOWLEDGED]
                           </div>
                         )}
+                        {state.operatingMode === 'Promptside' && state.promptsideState === 'standby_ack' && state.promptsideAckDone && (
+                          <div className="mt-0.5 text-[8px] font-bold uppercase tracking-wider bg-black text-emerald-400 border border-emerald-500 rounded px-1 py-0.2">
+                            [ACKNOWLEDGED]
+                          </div>
+                        )}
+                        {state.operatingMode === 'MSC_RTP_MIDI' && (
+                          <div className="mt-0.5 text-[8px] font-mono text-cyan-300 opacity-90">
+                            MSC: {state.mscLastCommand || 'READY'}
+                          </div>
+                        )}
                       </div>
 
                       {/* Bottom Status: Mode Badge, Cue & Peer / TA */}
@@ -543,6 +663,8 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                             {state.operatingMode === 'TSL_31' && `[TSL3.1 ${state.tsl31Transport}]`}
                             {state.operatingMode === 'TSL_50' && `[TSL5.0 ${state.tsl50Transport}]`}
                             {state.operatingMode === 'OSC_CueLight' && '[OSC CUE-LX]'}
+                            {state.operatingMode === 'Promptside' && '[PROMPTSIDE]'}
+                            {state.operatingMode === 'MSC_RTP_MIDI' && '[MSC rtpMIDI]'}
                           </span>
                           <span className="opacity-90 font-normal">
                             {state.operatingMode === 'ETC_CueSystem'
@@ -559,6 +681,10 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                               ? `Port ${state.tsl50Port}`
                               : state.operatingMode === 'OSC_CueLight'
                               ? `ID: ${state.oscCueStation}`
+                              : state.operatingMode === 'Promptside'
+                              ? `Port ${state.promptsidePort}`
+                              : state.operatingMode === 'MSC_RTP_MIDI'
+                              ? `Port ${state.mscPort}`
                               : state.operatingMode.includes('P2P')
                               ? `Grp: ${state.pairingGroup.slice(0, 6)}`
                               : (state.networkMode === 'ETH' ? 'TA: ONLINE' : 'TA: OFFLINE')}
@@ -579,6 +705,10 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                               ? 'Transport:'
                               : state.operatingMode === 'OSC_CueLight'
                               ? 'Cue State:'
+                              : state.operatingMode === 'Promptside'
+                              ? 'Ack State:'
+                              : state.operatingMode === 'MSC_RTP_MIDI'
+                              ? 'Dev ID:'
                               : (state.operatingMode === 'Presenter' || state.operatingMode === 'Presenter_P2P')
                               ? 'Cue(PVW):'
                               : 'Return(PRG):'}
@@ -590,6 +720,10 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                               ? (state.nmosOnAir ? 'bg-red-950 text-red-200 border border-red-500' : state.nmosPreview ? 'bg-emerald-950 text-emerald-200 border border-emerald-500' : 'opacity-70')
                               : state.operatingMode === 'OSC_CueLight'
                               ? (state.oscCueState === 'go' ? 'bg-emerald-950 text-emerald-300 border border-emerald-500' : state.oscCueState.startsWith('standby') ? 'bg-red-950 text-red-200 border border-red-500' : 'opacity-70')
+                              : state.operatingMode === 'Promptside'
+                              ? (state.promptsideAckDone ? 'bg-emerald-950 text-emerald-300 border border-emerald-500' : 'opacity-70')
+                              : state.operatingMode === 'MSC_RTP_MIDI'
+                              ? 'bg-blue-950 text-blue-300 border border-blue-600'
                               : (state.isCueActive 
                                   ? (state.operatingMode === 'Presenter' || state.operatingMode === 'Presenter_P2P'
                                       ? 'bg-emerald-950 text-emerald-300 border border-emerald-500' 
@@ -610,12 +744,20 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                               ? `${state.tsl50Transport} :${state.tsl50Port}`
                               : state.operatingMode === 'OSC_CueLight'
                               ? state.oscCueState.toUpperCase()
+                              : state.operatingMode === 'Promptside'
+                              ? (state.promptsideAckDone ? '● ACKED' : state.promptsideState.toUpperCase())
+                              : state.operatingMode === 'MSC_RTP_MIDI'
+                              ? `DEV ${state.mscDeviceId}`
                               : (state.isCueActive ? '● ACTIVE' : 'OFF')}
                           </span>
                         </div>
 
-                        {/* Presenter Cue Alert on TP unit OR Network IP */}
-                        {(state.operatingMode === 'TP' || state.operatingMode === 'TP_P2P') && state.presenterCueActive ? (
+                        {/* P2P Disconnect Alert OR Presenter Cue Alert OR Network IP */}
+                        {(state.operatingMode === 'TP_P2P' || state.operatingMode === 'Presenter_P2P') && state.p2pDisconnected ? (
+                          <div className="bg-yellow-400 text-black text-[8px] font-black tracking-tighter px-0.5 text-center animate-pulse rounded">
+                            &gt;&gt;&gt; PEER LOST - SEARCHING &lt;&lt;&lt;
+                          </div>
+                        ) : (state.operatingMode === 'TP' || state.operatingMode === 'TP_P2P') && state.presenterCueActive ? (
                           <div className="bg-red-600 text-yellow-300 text-[8px] font-black tracking-tighter px-0.5 text-center animate-pulse rounded">
                             &gt;&gt;&gt; PRESENTER CUE! &lt;&lt;&lt;
                           </div>
@@ -645,10 +787,31 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                         }`}>
                           <div>Mode: <span className="font-bold underline">{state.operatingMode}</span></div>
                           <div>IP: <span className="font-bold">{displayedIP}</span> ({state.useDHCP ? 'DHCP' : 'Static'})</div>
+                          <div>TZ: <span className="font-bold">{state.timezone}</span></div>
+                          {state.mtcReaderEnabled && (
+                            <div className="text-amber-400 font-bold">MTC: {state.mtcTimecode || '00:00:00:00'} (rtpMIDI)</div>
+                          )}
+                          {state.envSensorEnabled && (
+                            <div className="text-emerald-400 font-bold">
+                              ENV: {state.envTemperature.toFixed(1)}°C | {state.envHumidity.toFixed(0)}% | {state.envPressure.toFixed(0)}hPa
+                            </div>
+                          )}
                           <div>Wi-Fi: <span className={state.ethernetCableConnected ? 'text-amber-400 font-bold' : 'text-emerald-400'}>{state.ethernetCableConnected ? 'Disabled (PoE Precedence)' : 'Active STA'}</span></div>
-                          <div>IMU Rot: <span className="font-bold">{state.imuRotation}°</span></div>
+                          <div>IMU Rot: <span className="font-bold">{state.imuRotation}° (Auto)</span></div>
 
-                          {state.operatingMode === 'ETC_CueSystem' ? (
+                          {state.operatingMode === 'Promptside' ? (
+                            <>
+                              <div>Promptside: <span>UDP Port {state.promptsidePort}</span></div>
+                              <div>Ch: <span>{state.promptsideChannel}</span> | Wing: <span>{state.promptsideWingLabel}</span></div>
+                              <div>State: <span>{state.promptsideState.toUpperCase()} {state.promptsideAckDone ? '(ACKED)' : ''}</span></div>
+                            </>
+                          ) : state.operatingMode === 'MSC_RTP_MIDI' ? (
+                            <>
+                              <div>MSC rtpMIDI: <span>Port {state.mscPort}</span></div>
+                              <div>Dev ID: <span>{state.mscDeviceId}</span> | Cmd: <span>{state.mscLastCommand}</span></div>
+                              <div>Cue: <span>{state.mscCurrentCue || 'None'}</span></div>
+                            </>
+                          ) : state.operatingMode === 'ETC_CueSystem' ? (
                             <>
                               <div>Cue Hub: <span>{state.cueHost}:{state.cuePort}</span></div>
                               <div>Ch: <span>{state.cueChannel}</span> | State: <span>{state.cueState.toUpperCase()}</span></div>
@@ -694,7 +857,7 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                             <>
                               <div>Grp: <span>{state.pairingGroup}</span></div>
                               <div>TSL Port: <span>{state.tslPort}</span></div>
-                              <div>TA: <span>{state.operatingMode.includes('P2P') ? 'P2P Direct' : 'Connected'}</span></div>
+                              <div>TA: <span>{state.operatingMode.includes('P2P') ? (state.p2pDisconnected ? 'PEER LOST' : 'P2P Active') : 'Connected'}</span></div>
                             </>
                           )}
                           <div>D-Buffer: <span>32KB M5Canvas (OK)</span></div>
@@ -972,6 +1135,40 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                 <span>OSC Cue Light</span>
               </div>
               <p className="text-[10.5px] text-neutral-400 mt-0.5">RSMCK iOS Protocol</p>
+            </button>
+
+            {/* Promptside Theatrical Cue Light (Item 2) */}
+            <button
+              type="button"
+              onClick={() => setState(prev => ({ ...prev, operatingMode: 'Promptside', promptsideAckDone: false }))}
+              className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                state.operatingMode === 'Promptside'
+                  ? 'bg-amber-950/60 text-white border-amber-400 shadow-md shadow-amber-950/50'
+                  : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-neutral-700'
+              }`}
+            >
+              <div className="font-bold text-xs font-mono text-amber-400 flex items-center gap-1">
+                <Theater className="w-3.5 h-3.5" />
+                <span>Promptside</span>
+              </div>
+              <p className="text-[10.5px] text-neutral-400 mt-0.5">UDP 8000 Cue Lights</p>
+            </button>
+
+            {/* MIDI Show Control (MSC) over rtpMIDI (Item 3) */}
+            <button
+              type="button"
+              onClick={() => setState(prev => ({ ...prev, operatingMode: 'MSC_RTP_MIDI' }))}
+              className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                state.operatingMode === 'MSC_RTP_MIDI'
+                  ? 'bg-fuchsia-950/60 text-white border-fuchsia-400 shadow-md shadow-fuchsia-950/50'
+                  : 'bg-neutral-950 text-neutral-400 border-neutral-800 hover:border-neutral-700'
+              }`}
+            >
+              <div className="font-bold text-xs font-mono text-fuchsia-400 flex items-center gap-1">
+                <Music className="w-3.5 h-3.5" />
+                <span>MSC (rtpMIDI)</span>
+              </div>
+              <p className="text-[10.5px] text-neutral-400 mt-0.5">RP-002 Show Control</p>
             </button>
           </div>
 
@@ -1459,6 +1656,171 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                 })}
               </div>
             </div>
+          ) : state.operatingMode === 'Promptside' ? (
+            <div className="p-4 bg-neutral-950 rounded-xl border border-amber-900/40 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <Theater className="w-4 h-4" />
+                  <span>Promptside Theatrical Cue System (UDP Port {state.promptsidePort})</span>
+                </span>
+                <span className="text-[11px] font-mono text-neutral-400">Channel {state.promptsideChannel}</span>
+              </div>
+              <p className="text-xs text-neutral-400">
+                <strong>Protocol:</strong> <code>/promptside/channel/{state.promptsideChannel}/standby</code> (Flashing Red) &rarr; Button click sends <code>/promptside/channel/{state.promptsideChannel}/ack 1</code> (Solid Red) &rarr; <code>/go</code> (Solid Green).
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-mono text-neutral-400 mb-1">CUE NOTE / MESSAGE (/text):</label>
+                  <input
+                    type="text"
+                    value={state.promptsideCueText}
+                    onChange={(e) => setState(prev => ({ ...prev, promptsideCueText: e.target.value }))}
+                    placeholder="e.g. Standby for Act 1 Scene 2"
+                    className="w-full bg-neutral-900 border border-neutral-700 rounded px-2.5 py-1.5 text-xs font-mono text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-mono text-neutral-400 mb-1">WING / OUTSTATION BANNER:</label>
+                  <input
+                    type="text"
+                    value={state.promptsideWingLabel}
+                    onChange={(e) => setState(prev => ({ ...prev, promptsideWingLabel: e.target.value }))}
+                    placeholder="e.g. PROMPT CORNER WING"
+                    className="w-full bg-neutral-900 border border-neutral-700 rounded px-2.5 py-1.5 text-xs font-mono text-cyan-400"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2.5 pt-2 border-t border-neutral-800">
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, promptsideState: 'standby_ack', promptsideAckDone: false }))}
+                  className={`px-3 py-2 rounded-lg text-xs font-mono font-semibold border transition-all cursor-pointer ${
+                    state.promptsideState === 'standby_ack' && !state.promptsideAckDone
+                      ? 'bg-red-600 text-white border-red-400 font-bold animate-pulse'
+                      : 'bg-neutral-800 text-red-300 border-neutral-700 hover:border-red-500'
+                  }`}
+                >
+                  Trigger STANDBY (Flashing Red)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onSendTslPacket(state.promptsideChannel, true);
+                    setState(prev => ({ ...prev, promptsideAckDone: true }));
+                  }}
+                  className={`px-3 py-2 rounded-lg text-xs font-mono font-semibold border transition-all cursor-pointer ${
+                    state.promptsideAckDone
+                      ? 'bg-red-600 text-white border-red-400 font-bold'
+                      : 'bg-neutral-800 text-neutral-300 border-neutral-700 hover:border-red-500'
+                  }`}
+                >
+                  Send ACK (Solid Red)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, promptsideState: 'go' }))}
+                  className={`px-3 py-2 rounded-lg text-xs font-mono font-semibold border transition-all cursor-pointer ${
+                    state.promptsideState === 'go'
+                      ? 'bg-emerald-600 text-black border-emerald-400 font-bold'
+                      : 'bg-neutral-800 text-emerald-300 border-neutral-700 hover:border-emerald-500'
+                  }`}
+                >
+                  Trigger GO! (Green)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, promptsideState: 'off', promptsideAckDone: false }))}
+                  className="px-3 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-lg text-xs font-mono border border-neutral-700 cursor-pointer"
+                >
+                  Clear / OFF
+                </button>
+              </div>
+            </div>
+          ) : state.operatingMode === 'MSC_RTP_MIDI' ? (
+            <div className="p-4 bg-neutral-950 rounded-xl border border-fuchsia-900/40 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-fuchsia-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <Music className="w-4 h-4" />
+                  <span>MIDI Show Control (MSC over rtpMIDI UDP {state.mscPort})</span>
+                </span>
+                <span className="text-[11px] font-mono text-neutral-400">Device ID: {state.mscDeviceId}</span>
+              </div>
+              <p className="text-xs text-neutral-400">
+                <strong>Standard:</strong> RP-002 SysEx <code>0xF0 0x7F &lt;dev&gt; 0x02 &lt;fmt&gt; &lt;cmd&gt; [cue] 0xF7</code>. Supports GO (Green), STOP (Solid Red), STANDBY+ (Flashing Red), and ALL_OFF.
+              </p>
+
+              <div>
+                <label className="block text-[10px] font-mono text-neutral-400 mb-1">CUE NUMBER PARAMETER:</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={state.mscCurrentCue}
+                    onChange={(e) => setState(prev => ({ ...prev, mscCurrentCue: e.target.value }))}
+                    placeholder="e.g. 42.1 or 105"
+                    className="flex-1 bg-neutral-900 border border-neutral-700 rounded px-2.5 py-1.5 text-xs font-mono text-white"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setState(prev => ({ ...prev, mscCurrentCue: '1.0' }))}
+                    className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded text-[11px] font-mono border border-neutral-700"
+                  >
+                    Cue 1.0
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setState(prev => ({ ...prev, mscCurrentCue: '42.5' }))}
+                    className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded text-[11px] font-mono border border-neutral-700"
+                  >
+                    Cue 42.5
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2.5 pt-2 border-t border-neutral-800">
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, mscState: 'go', mscLastCommand: 'GO (0x01)' }))}
+                  className={`px-3 py-2 rounded-lg text-xs font-mono font-semibold border transition-all cursor-pointer ${
+                    state.mscState === 'go'
+                      ? 'bg-emerald-600 text-black border-emerald-400 font-bold'
+                      : 'bg-neutral-800 text-emerald-300 border-neutral-700 hover:border-emerald-500'
+                  }`}
+                >
+                  Send MSC GO (0x01)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, mscState: 'standby', mscLastCommand: 'STOP (0x02)' }))}
+                  className={`px-3 py-2 rounded-lg text-xs font-mono font-semibold border transition-all cursor-pointer ${
+                    state.mscState === 'standby'
+                      ? 'bg-red-600 text-white border-red-400 font-bold'
+                      : 'bg-neutral-800 text-red-300 border-neutral-700 hover:border-red-500'
+                  }`}
+                >
+                  Send MSC STOP (0x02)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, mscState: 'standby+', mscLastCommand: 'STANDBY+ (0x0B)' }))}
+                  className={`px-3 py-2 rounded-lg text-xs font-mono font-semibold border transition-all cursor-pointer ${
+                    state.mscState === 'standby+'
+                      ? 'bg-red-600 text-white border-red-400 font-bold animate-pulse'
+                      : 'bg-neutral-800 text-amber-300 border-neutral-700 hover:border-amber-500'
+                  }`}
+                >
+                  Send MSC STANDBY+ (0x0B)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, mscState: 'off', mscLastCommand: 'ALL_OFF (0x08)' }))}
+                  className="px-3 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-lg text-xs font-mono border border-neutral-700 cursor-pointer"
+                >
+                  Send MSC ALL_OFF (0x08)
+                </button>
+              </div>
+            </div>
           ) : (
             <div className="p-3.5 bg-neutral-950 rounded-xl border border-neutral-800 grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs font-mono">
               <div>
@@ -1671,6 +2033,172 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
             </div>
           </div>
         )}
+
+        {/* Global Hardware & System Features Card (MTC, AtomENV, P2P Disconnect, Timezone) */}
+        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 space-y-4">
+          <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+            <h3 className="text-sm font-semibold text-neutral-200 uppercase tracking-wider flex items-center gap-2">
+              <Cpu className="w-4 h-4 text-cyan-400" />
+              <span>Global Hardware &amp; System Engine Simulation</span>
+            </h3>
+            <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">
+              Firmware Features
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* 1. MTC (MIDI Time Code) Reader Simulator */}
+            <div className="p-3.5 bg-neutral-950 rounded-xl border border-neutral-800 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-amber-400 font-mono flex items-center gap-1.5">
+                  <Music className="w-3.5 h-3.5" />
+                  <span>MTC (MIDI Time Code) Reader</span>
+                </span>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={state.mtcReaderEnabled}
+                    onChange={(e) => setState(prev => ({ ...prev, mtcReaderEnabled: e.target.checked }))}
+                    className="sr-only peer"
+                  />
+                  <div className="w-8 h-4 bg-neutral-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-amber-600"></div>
+                </label>
+              </div>
+              <p className="text-[11px] text-neutral-400 leading-snug">
+                Replaces NTP clock on Screen 0 with incoming SMPTE timecode (<code>HH:MM:SS:FF</code>) from rtpMIDI quarter-frames (<code>0xF1</code>) &amp; full-frame SysEx.
+              </p>
+              {state.mtcReaderEnabled && (
+                <div className="pt-2 border-t border-neutral-800 flex items-center gap-2">
+                  <span className="text-[10px] font-mono text-neutral-400">SIMULATE MTC:</span>
+                  <input
+                    type="text"
+                    value={state.mtcTimecode}
+                    onChange={(e) => setState(prev => ({ ...prev, mtcTimecode: e.target.value }))}
+                    placeholder="01:23:45:18"
+                    className="flex-1 bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-xs font-mono font-bold text-amber-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setState(prev => ({ ...prev, mtcTimecode: '01:00:00:00' }))}
+                    className="px-2 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded text-[10px] font-mono border border-neutral-700"
+                  >
+                    1hr
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* 2. M5Stack AtomENV Sensor Simulator & REST API */}
+            <div className="p-3.5 bg-neutral-950 rounded-xl border border-neutral-800 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-emerald-400 font-mono flex items-center gap-1.5">
+                  <Cpu className="w-3.5 h-3.5" />
+                  <span>M5Stack AtomENV Sensor</span>
+                </span>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={state.envSensorEnabled}
+                    onChange={(e) => setState(prev => ({ ...prev, envSensorEnabled: e.target.checked }))}
+                    className="sr-only peer"
+                  />
+                  <div className="w-8 h-4 bg-neutral-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-600"></div>
+                </label>
+              </div>
+              <p className="text-[11px] text-neutral-400 leading-snug">
+                SHT30 (Temp/Humidity) &amp; BMP280 (Pressure) on Grove I2C (SDA:2, SCL:1). Served via <code>GET /api/env</code>.
+              </p>
+              {state.envSensorEnabled && (
+                <div className="pt-2 border-t border-neutral-800 space-y-2 text-[10.5px] font-mono">
+                  <div className="flex justify-between items-center">
+                    <span className="text-neutral-400">Temp: {state.envTemperature.toFixed(1)}°C</span>
+                    <input
+                      type="range"
+                      min="15"
+                      max="35"
+                      step="0.5"
+                      value={state.envTemperature}
+                      onChange={(e) => setState(prev => ({ ...prev, envTemperature: parseFloat(e.target.value) }))}
+                      className="w-24 accent-emerald-500"
+                    />
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-neutral-400">Humidity: {state.envHumidity.toFixed(0)}%</span>
+                    <input
+                      type="range"
+                      min="20"
+                      max="80"
+                      step="1"
+                      value={state.envHumidity}
+                      onChange={(e) => setState(prev => ({ ...prev, envHumidity: parseFloat(e.target.value) }))}
+                      className="w-24 accent-emerald-500"
+                    />
+                  </div>
+                  <div className="p-1.5 bg-neutral-900 rounded border border-neutral-800 text-[9.5px] text-neutral-300 overflow-x-auto">
+                    <code>GET /api/env &rarr; &#123;"temp":{state.envTemperature.toFixed(1)},"hum":{state.envHumidity.toFixed(0)},"press":{state.envPressure.toFixed(0)}&#125;</code>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 3. P2P Heartbeat & Disconnect Alarm */}
+            <div className="p-3.5 bg-neutral-950 rounded-xl border border-neutral-800 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-yellow-400 font-mono flex items-center gap-1.5">
+                  <Zap className="w-3.5 h-3.5" />
+                  <span>P2P Heartbeat Watchdog</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setState(prev => ({ ...prev, p2pDisconnected: !prev.p2pDisconnected }))}
+                  className={`px-2.5 py-1 rounded text-[10px] font-mono font-bold border transition-colors cursor-pointer ${
+                    state.p2pDisconnected
+                      ? 'bg-yellow-500 text-black border-yellow-400 animate-pulse'
+                      : 'bg-neutral-800 text-neutral-300 border-neutral-700 hover:border-yellow-600'
+                  }`}
+                >
+                  {state.p2pDisconnected ? 'DISCONNECTED (Alarm Active)' : 'Heartbeat Normal (250ms)'}
+                </button>
+              </div>
+              <p className="text-[11px] text-neutral-400 leading-snug">
+                Units ping each other every 0.25s (250ms). If &gt; 4 consecutive checks are missed (&gt;1000ms), units strobe bright yellow and display <code>&gt;&gt;&gt; PEER LOST - SEARCHING &lt;&lt;&lt;</code>.
+              </p>
+            </div>
+
+            {/* 4. Timezone & SNTP Clock Engine */}
+            <div className="p-3.5 bg-neutral-950 rounded-xl border border-neutral-800 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-blue-400 font-mono flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>Timezone &amp; POSIX SNTP</span>
+                </span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800">
+                  {state.timezone}
+                </span>
+              </div>
+              <p className="text-[11px] text-neutral-400 leading-snug">
+                Configures ESP32 <code>configTzTime()</code> with official IANA/POSIX rules for automatic daylight savings adjustment.
+              </p>
+              <div className="pt-1">
+                <select
+                  value={state.timezone}
+                  onChange={(e) => setState(prev => ({ ...prev, timezone: e.target.value }))}
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded px-2.5 py-1 text-xs font-mono text-white focus:outline-none focus:border-blue-500"
+                >
+                  <option value="Europe/London">Europe/London (GMT/BST - UK Royal Opera House)</option>
+                  <option value="UTC">UTC (Coordinated Universal Time)</option>
+                  <option value="America/New_York">America/New_York (US Eastern Time)</option>
+                  <option value="America/Chicago">America/Chicago (US Central Time)</option>
+                  <option value="America/Denver">America/Denver (US Mountain Time)</option>
+                  <option value="America/Los_Angeles">America/Los_Angeles (US Pacific Time)</option>
+                  <option value="Europe/Paris">Europe/Paris (CET/CEST - Paris, Amsterdam, Berlin)</option>
+                  <option value="Asia/Tokyo">Asia/Tokyo (JST - Japan Standard Time)</option>
+                  <option value="Australia/Sydney">Australia/Sydney (AEST/AEDT)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

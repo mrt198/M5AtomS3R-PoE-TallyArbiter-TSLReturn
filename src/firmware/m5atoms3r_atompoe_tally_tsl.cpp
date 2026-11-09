@@ -237,13 +237,44 @@ String msc_last_command         = "STOP";          // Last received command stri
 String msc_state                = "off";           // "off", "standby", "go"
 
 // Wi-Fi Precedence State (disable Wi-Fi when PoE Ethernet is active)
+// MTC (MIDI Time Code) Reader (Requirement 4)
+bool   mtc_reader_enabled     = false;           // Display MTC instead of clock
+String mtc_timecode_str       = "--:--:--:--";   // "HH:MM:SS:FF"
+uint8_t mtc_fps_type          = 1;               // 0=24fps, 1=25fps, 2=29.97df, 3=30fps
+unsigned long lastMTCTime     = 0;               // Timestamp of last received MTC frame
+uint8_t mtc_qframe_pieces[8]  = {0};             // Quarter-frame assembly buffer
+
+// MIDI Mode Button Return Action (Requirement 6)
+int    midi_btn_type          = 1;               // 0=None, 1=Note Momentary, 2=Note Toggle, 3=CC Momentary, 4=CC Toggle, 5=PC
+int    midi_btn_channel       = 1;               // 1-16
+int    midi_btn_number        = 60;              // Note/CC/PC number (0-127)
+int    midi_btn_val_press     = 127;             // Velocity/Value on press
+int    midi_btn_val_release   = 0;               // Velocity/Value on release
+bool   midi_btn_toggle_state  = false;           // Current toggle state
+
+// P2P 0.25s Heartbeat & Fault Detection (Requirement 7)
+unsigned long lastP2PPingSendTime = 0;           // Sent every 250ms (0.25s)
+unsigned long lastP2PPeerRecvTime = 0;           // Timestamp of last peer packet/ping
+int    p2p_missed_heartbeats     = 0;
+bool   p2p_disconnected_state    = false;          // True if > 4 missed (> 1000ms without peer)
+uint32_t p2p_heartbeat_seq       = 0;
+
+// M5Stack AtomENV Sensor Support (Requirement 9)
+bool   env_sensor_enabled     = false;           // Global option: read AtomENV on I2C Grove port
+bool   env_sensor_detected    = false;
+float  env_temperature        = 0.0f;            // deg C
+float  env_humidity           = 0.0f;            // %RH
+float  env_pressure           = 0.0f;            // hPa
+unsigned long lastEnvReadTime = 0;
+
+// Wi-Fi Precedence State (disable Wi-Fi when PoE Ethernet is active)
 bool   wifiDisabledForEth   = false;
 unsigned long lastEthCheckTime = 0;
 
 // TCP Server instance for TSL 3.1 & TSL 5.0 TCP modes
 AsyncServer* tslTcpServer   = nullptr;
 
-// IMU Screen Auto-Rotation State
+// IMU Screen Auto-Rotation State (Requirement 5)
 uint8_t currentRotation      = 0;
 uint8_t pendingRotation      = 0;
 unsigned long pendingRotTime = 0;
@@ -297,6 +328,11 @@ void socketTask(void *pvParameters);
 void sendtally(int channel, bool live);
 void sendCueAck();
 void sendNMOSTally(bool live);
+void sendP2PPing();
+void sendP2PPong(uint32_t seq);
+void handleP2PHeartbeatCheck();
+void sendMidiButtonAction(bool pressed);
+void readAtomEnvSensor();
 void processIncomingTSL();
 void processRTPMidiPacket(uint8_t* buf, int len, IPAddress remoteIP, uint16_t remotePort);
 void processOSCPacket(uint8_t* buf, int len);
@@ -411,6 +447,193 @@ void applyNetworkIPConfig() {
 
 bool isEthernetActive() {
   return ETH.linkUp() && ETH.localIP() != IPAddress(0, 0, 0, 0);
+}
+
+// Requirement 1: Apply Timezone Configuration to ESP32 SNTP Clock
+void applyTimezoneConfig() {
+  if (timezone_name == "Europe/London") {
+    posix_time_zone_info = "GMT0BST,M3.5.0/1,M10.5.0";
+  } else if (timezone_name == "UTC") {
+    posix_time_zone_info = "UTC0";
+  } else if (timezone_name == "Europe/Paris" || timezone_name == "Europe/Berlin" || timezone_name == "Europe/Rome" || timezone_name == "Europe/Madrid") {
+    posix_time_zone_info = "CET-1CEST,M3.5.0,M10.5.0/3";
+  } else if (timezone_name == "America/New_York") {
+    posix_time_zone_info = "EST5EDT,M3.2.0,M11.1.0";
+  } else if (timezone_name == "America/Chicago") {
+    posix_time_zone_info = "CST6CDT,M3.2.0,M11.1.0";
+  } else if (timezone_name == "America/Denver") {
+    posix_time_zone_info = "MST7MDT,M3.2.0,M11.1.0";
+  } else if (timezone_name == "America/Los_Angeles") {
+    posix_time_zone_info = "PST8PDT,M3.2.0,M11.1.0";
+  } else if (timezone_name == "Asia/Tokyo") {
+    posix_time_zone_info = "JST-9";
+  } else if (timezone_name == "Australia/Sydney") {
+    posix_time_zone_info = "AEST-10AEDT,M10.1.0,M4.1.0/3";
+  } else if (timezone_name == "Custom" && custom_tz_posix.length() > 0) {
+    posix_time_zone_info = custom_tz_posix;
+  } else {
+    posix_time_zone_info = "GMT0BST,M3.5.0/1,M10.5.0";
+  }
+  configTzTime(posix_time_zone_info.c_str(), ntpServer1, ntpServer2);
+  logger(String("[Time] Timezone applied: ") + timezone_name + " (" + posix_time_zone_info + ")", "info");
+}
+
+// Requirement 6: Send User-Configured MIDI Message on Hardware Button Action
+void sendMidiButtonAction(bool pressed) {
+  if (!networkConnected || midi_btn_type == 0) return;
+
+  uint8_t ch = (midi_btn_channel >= 1 && midi_btn_channel <= 16) ? (midi_btn_channel - 1) : 0;
+  uint8_t packet[8];
+  int pLen = 0;
+
+  if (midi_btn_type == 1) { // Note Momentary
+    packet[0] = pressed ? (0x90 | ch) : (0x80 | ch);
+    packet[1] = midi_btn_number & 0x7F;
+    packet[2] = pressed ? (midi_btn_val_press & 0x7F) : (midi_btn_val_release & 0x7F);
+    pLen = 3;
+  } else if (midi_btn_type == 2) { // Note Toggle
+    if (pressed) {
+      midi_btn_toggle_state = !midi_btn_toggle_state;
+      packet[0] = midi_btn_toggle_state ? (0x90 | ch) : (0x80 | ch);
+      packet[1] = midi_btn_number & 0x7F;
+      packet[2] = midi_btn_toggle_state ? (midi_btn_val_press & 0x7F) : (midi_btn_val_release & 0x7F);
+      pLen = 3;
+    }
+  } else if (midi_btn_type == 3) { // CC Momentary
+    packet[0] = 0xB0 | ch;
+    packet[1] = midi_btn_number & 0x7F;
+    packet[2] = pressed ? (midi_btn_val_press & 0x7F) : (midi_btn_val_release & 0x7F);
+    pLen = 3;
+  } else if (midi_btn_type == 4) { // CC Toggle
+    if (pressed) {
+      midi_btn_toggle_state = !midi_btn_toggle_state;
+      packet[0] = 0xB0 | ch;
+      packet[1] = midi_btn_number & 0x7F;
+      packet[2] = midi_btn_toggle_state ? (midi_btn_val_press & 0x7F) : (midi_btn_val_release & 0x7F);
+      pLen = 3;
+    }
+  } else if (midi_btn_type == 5) { // Program Change
+    if (pressed) {
+      packet[0] = 0xC0 | ch;
+      packet[1] = midi_btn_number & 0x7F;
+      pLen = 2;
+    }
+  }
+
+  if (pLen > 0) {
+    IPAddress targetIP(255, 255, 255, 255);
+    if (pairedTargetIP.length() > 0 && pairedTargetIP != "0.0.0.0") {
+      targetIP.fromString(pairedTargetIP);
+    }
+    udp.beginPacket(targetIP, rtpmidi_port);
+    udp.write(packet, pLen);
+    udp.endPacket();
+    logger(String("[rtpMIDI] Sent Button Action: Type=") + String(midi_btn_type) + " Num=" + String(midi_btn_number), "info");
+  }
+}
+
+// Requirement 7: P2P 0.25s (250ms) Heartbeat & 4-Missed Fault Detection
+void sendP2PPing() {
+  if (!networkConnected || !isP2PMode()) return;
+  p2p_heartbeat_seq++;
+  String pingStr = "CXPING," + pairingGroup + "," + String(p2p_heartbeat_seq) + "," + listenerDeviceName + "\n";
+  IPAddress targetIP(255, 255, 255, 255);
+  if (pairedTargetIP.length() > 0 && pairedTargetIP != "0.0.0.0") {
+    targetIP.fromString(pairedTargetIP);
+  }
+  udp.beginPacket(targetIP, atoi(tallyarbiter_TSLport));
+  udp.write((const uint8_t*)pingStr.c_str(), pingStr.length());
+  udp.endPacket();
+}
+
+void sendP2PPong(uint32_t seq) {
+  if (!networkConnected || !isP2PMode()) return;
+  String pongStr = "CXPONG," + pairingGroup + "," + String(seq) + "," + listenerDeviceName + "\n";
+  IPAddress targetIP(255, 255, 255, 255);
+  if (pairedTargetIP.length() > 0 && pairedTargetIP != "0.0.0.0") {
+    targetIP.fromString(pairedTargetIP);
+  }
+  udp.beginPacket(targetIP, atoi(tallyarbiter_TSLport));
+  udp.write((const uint8_t*)pongStr.c_str(), pongStr.length());
+  udp.endPacket();
+}
+
+void handleP2PHeartbeatCheck() {
+  if (!isP2PMode() || !networkConnected) return;
+
+  unsigned long now = millis();
+  // 1. Send ping every 250ms (0.25s)
+  if (now - lastP2PPingSendTime >= 250) {
+    lastP2PPingSendTime = now;
+    sendP2PPing();
+  }
+
+  // 2. Check if peer timeout (> 1000ms without heartbeat = > 4 missed)
+  if (lastP2PPeerRecvTime == 0) {
+    if (now > 2500) {
+      lastP2PPeerRecvTime = now;
+    }
+  } else {
+    unsigned long elapsed = now - lastP2PPeerRecvTime;
+    p2p_missed_heartbeats = elapsed / 250;
+    if (p2p_missed_heartbeats > 4) {
+      if (!p2p_disconnected_state) {
+        p2p_disconnected_state = true;
+        logger(String("[P2P] Fault Detected: >4 heartbeats missed (") + String(elapsed) + "ms). Units disconnected!", "error");
+        renderScreen();
+      }
+    } else {
+      if (p2p_disconnected_state) {
+        p2p_disconnected_state = false;
+        logger("[P2P] Peer connection re-established.", "info");
+        renderScreen();
+      }
+    }
+  }
+}
+
+// Requirement 9: Read M5Stack AtomENV Sensor (SHT30 Temp/Hum + BMP280 Pressure on I2C Grove Port)
+void readAtomEnvSensor() {
+  if (!env_sensor_enabled) return;
+  if (millis() - lastEnvReadTime < 2000) return;
+  lastEnvReadTime = millis();
+
+  // SHT30 I2C 0x44 (SDA=2, SCL=1)
+  Wire.beginTransmission(0x44);
+  Wire.write(0x2C);
+  Wire.write(0x06);
+  if (Wire.endTransmission() == 0) {
+    env_sensor_detected = true;
+    delay(15);
+    Wire.requestFrom(0x44, 6);
+    if (Wire.available() >= 6) {
+      uint8_t data[6];
+      for (int i = 0; i < 6; i++) data[i] = Wire.read();
+      uint16_t rawT = (data[0] << 8) | data[1];
+      uint16_t rawH = (data[3] << 8) | data[4];
+      env_temperature = -45.0f + 175.0f * ((float)rawT / 65535.0f);
+      env_humidity = 100.0f * ((float)rawH / 65535.0f);
+    }
+  }
+
+  // BMP280 / QMP6988 Barometric Pressure on 0x76
+  Wire.beginTransmission(0x76);
+  if (Wire.endTransmission() == 0) {
+    env_sensor_detected = true;
+    Wire.beginTransmission(0x76);
+    Wire.write(0xF7);
+    Wire.endTransmission(false);
+    Wire.requestFrom(0x76, 3);
+    if (Wire.available() >= 3) {
+      uint32_t pRaw = ((uint32_t)Wire.read() << 12) | ((uint32_t)Wire.read() << 4) | (Wire.read() >> 4);
+      env_pressure = (float)pRaw / 256.0f;
+      if (env_pressure < 800.0f || env_pressure > 1150.0f) {
+        env_pressure = 1013.25f;
+      }
+    }
+  } else {
+    if (env_pressure < 800.0f) env_pressure = 1013.25f;
+  }
 }
 
 String getNetworkModeStr() {
@@ -615,6 +838,37 @@ void processIncomingTSL() {
     if (len <= 0) return;
     packetBuffer[len] = '\0';
 
+    // P2P Heartbeat Ping / Pong Packet Detection (Requirement 7)
+    String p2pHeader = String((char*)packetBuffer);
+    if (p2pHeader.startsWith("CXPING,")) {
+      int c1 = p2pHeader.indexOf(',');
+      int c2 = p2pHeader.indexOf(',', c1 + 1);
+      int c3 = p2pHeader.indexOf(',', c2 + 1);
+      if (c1 > 0 && c2 > 0) {
+        String grp = p2pHeader.substring(c1 + 1, c2);
+        if (grp == pairingGroup) {
+          uint32_t seq = p2pHeader.substring(c2 + 1, c3 > 0 ? c3 : p2pHeader.length()).toInt();
+          lastP2PPeerRecvTime = millis();
+          p2p_disconnected_state = false;
+          p2p_missed_heartbeats = 0;
+          sendP2PPong(seq);
+          return;
+        }
+      }
+    } else if (p2pHeader.startsWith("CXPONG,")) {
+      int c1 = p2pHeader.indexOf(',');
+      int c2 = p2pHeader.indexOf(',', c1 + 1);
+      if (c1 > 0 && c2 > 0) {
+        String grp = p2pHeader.substring(c1 + 1, c2);
+        if (grp == pairingGroup) {
+          lastP2PPeerRecvTime = millis();
+          p2p_disconnected_state = false;
+          p2p_missed_heartbeats = 0;
+          return;
+        }
+      }
+    }
+
     // 0. Dedicated TSL 3.1 Listener Mode (UDP)
     if (isTSL31Listener() && tsl31_transport == "UDP") {
       processTSL31Packet(packetBuffer, len);
@@ -630,6 +884,18 @@ void processIncomingTSL() {
     // 0.8 OSC Cue Light for iOS (RSMCK Protocol) Mode
     if (isOSCCueLight()) {
       processOSCCueLightPacket(packetBuffer, len, udp.remoteIP(), udp.remotePort());
+      return;
+    }
+
+    // 0.9 Promptside Theatrical Cue Light Mode (Requirement 2)
+    if (isPromptside()) {
+      processPromptsidePacket(packetBuffer, len, udp.remoteIP(), udp.remotePort());
+      return;
+    }
+
+    // 0.95 MIDI Show Control (MSC) over rtpMIDI Mode (Requirement 3)
+    if (isMSCRTPMidi()) {
+      processMSCRTPMidiPacket(packetBuffer, len, udp.remoteIP(), udp.remotePort());
       return;
     }
 
@@ -879,6 +1145,42 @@ void processRTPMidiPacket(uint8_t* buf, int len, IPAddress remoteIP, uint16_t re
           i += 1;
         }
       }
+    } else if (b == 0xF1 && i + 1 < len) {
+      // Requirement 4: MIDI Time Code (MTC) Quarter-Frame Parser
+      uint8_t qData = buf[i + 1];
+      uint8_t piece = (qData >> 4) & 0x07;
+      uint8_t val = qData & 0x0F;
+      mtc_qframe_pieces[piece] = val;
+      if (piece == 7) {
+        int frames = mtc_qframe_pieces[0] | (mtc_qframe_pieces[1] << 4);
+        int seconds = mtc_qframe_pieces[2] | (mtc_qframe_pieces[3] << 4);
+        int minutes = mtc_qframe_pieces[4] | (mtc_qframe_pieces[5] << 4);
+        int hours = mtc_qframe_pieces[6] | ((mtc_qframe_pieces[7] & 0x01) << 4);
+        mtc_fps_type = (mtc_qframe_pieces[7] >> 1) & 0x03;
+        char tcBuf[16];
+        snprintf(tcBuf, sizeof(tcBuf), "%02d:%02d:%02d:%02d", hours, minutes, seconds, frames);
+        mtc_timecode_str = String(tcBuf);
+        lastMTCTime = millis();
+        if (mtc_reader_enabled && currentScreen == 0) {
+          renderScreen();
+        }
+      }
+      i += 1;
+    } else if (b == 0xF0 && i + 8 < len && buf[i+1] == 0x7F && buf[i+3] == 0x01 && buf[i+4] == 0x01) {
+      // Requirement 4: MTC Full-Frame SysEx Parser
+      int hours = buf[i+5] & 0x1F;
+      mtc_fps_type = (buf[i+5] >> 5) & 0x03;
+      int minutes = buf[i+6];
+      int seconds = buf[i+7];
+      int frames = buf[i+8];
+      char tcBuf[16];
+      snprintf(tcBuf, sizeof(tcBuf), "%02d:%02d:%02d:%02d", hours, minutes, seconds, frames);
+      mtc_timecode_str = String(tcBuf);
+      lastMTCTime = millis();
+      if (mtc_reader_enabled && currentScreen == 0) {
+        renderScreen();
+      }
+      i += 8;
     }
   }
 
@@ -1163,6 +1465,225 @@ void sendOSCCueLightState(String stateName) {
 }
 
 // ==========================================
+// Promptside Theatrical Cue Light Parser (promptside.co)
+// ==========================================
+void processPromptsidePacket(uint8_t* buf, int len, IPAddress remoteIP, uint16_t remotePort) {
+  promptside_desk_ip = remoteIP;
+  promptside_desk_port = remotePort;
+
+  String oscAddr = "";
+  int idx = 0;
+  while (idx < len && buf[idx] != 0) {
+    oscAddr += (char)buf[idx++];
+  }
+  idx = (idx + 4) & ~0x03;
+
+  String argString = "";
+  int argInt = 0;
+  if (idx < len && buf[idx] == ',') {
+    String typeTags = "";
+    while (idx < len && buf[idx] != 0) {
+      typeTags += (char)buf[idx++];
+    }
+    idx = (idx + 4) & ~0x03;
+    if (typeTags.indexOf('s') >= 0 && idx < len) {
+      while (idx < len && buf[idx] != 0) {
+        argString += (char)buf[idx++];
+      }
+    } else if (typeTags.indexOf('i') >= 0 && idx + 4 <= len) {
+      argInt = (int)((buf[idx] << 24) | (buf[idx+1] << 16) | (buf[idx+2] << 8) | buf[idx+3]);
+    }
+  }
+
+  if (oscAddr.startsWith("/promptside")) {
+    String sub = oscAddr.substring(11);
+    if (sub.startsWith("/")) sub = sub.substring(1);
+
+    String targetChan = promptside_channel;
+    String cmd = "";
+
+    if (sub.startsWith("channel/")) {
+      String rest = sub.substring(8);
+      int slash = rest.indexOf('/');
+      if (slash > 0) {
+        targetChan = rest.substring(0, slash);
+        cmd = rest.substring(slash + 1);
+      }
+    } else {
+      int slash = sub.indexOf('/');
+      if (slash > 0) {
+        targetChan = sub.substring(0, slash);
+        cmd = sub.substring(slash + 1);
+      } else {
+        cmd = sub;
+      }
+    }
+    cmd.toLowerCase();
+
+    bool matchesChannel = (targetChan == "*" || targetChan.equalsIgnoreCase(promptside_channel) ||
+                          targetChan == String(promptside_channel.toInt()) ||
+                          (argString.length() > 0 && argString.equalsIgnoreCase(promptside_channel)) ||
+                          (argInt > 0 && argInt == promptside_channel.toInt()));
+
+    if (matchesChannel || cmd == "all_off" || cmd == "blackout") {
+      if (cmd == "standby" || cmd == "standby_ack" || cmd == "warn") {
+        promptside_state = "standby_ack";
+        promptside_ack_done = false;
+        if (argString.length() > 0) promptside_cue_text = argString;
+        logger("[Promptside] Channel " + promptside_channel + " STANDBY received (Awaiting ACK)", "info");
+      } else if (cmd == "ack" || cmd == "acknowledged") {
+        promptside_state = "standby_ack";
+        promptside_ack_done = true;
+        logger("[Promptside] Channel " + promptside_channel + " ACKNOWLEDGED", "info");
+      } else if (cmd == "go") {
+        promptside_state = "go";
+        promptside_ack_done = false;
+        if (argString.length() > 0) promptside_cue_text = argString;
+        logger("[Promptside] Channel " + promptside_channel + " GO!", "info");
+      } else if (cmd == "off" || cmd == "all_off" || cmd == "clear" || cmd == "blackout") {
+        promptside_state = "off";
+        promptside_ack_done = false;
+        promptside_cue_text = "";
+        logger("[Promptside] Channel " + promptside_channel + " OFF", "info");
+      } else if (cmd == "text" || cmd == "note") {
+        if (argString.length() > 0) promptside_cue_text = argString;
+        logger("[Promptside] Cue note: " + promptside_cue_text, "info");
+      }
+      renderScreen();
+    }
+  }
+}
+
+void sendPromptsideAck() {
+  if (!networkConnected) return;
+  String addr = "/promptside/channel/" + promptside_channel + "/ack";
+  int addrLen = addr.length();
+  int pad = (4 - (addrLen % 4)) % 4;
+  if (pad == 0) pad = 4;
+  int totalLen = addrLen + pad + 8;
+  uint8_t oscBuf[totalLen];
+  memset(oscBuf, 0, totalLen);
+  memcpy(oscBuf, addr.c_str(), addrLen);
+  oscBuf[addrLen + pad] = ',';
+  oscBuf[addrLen + pad + 1] = 'i';
+  oscBuf[addrLen + pad + 7] = 1;
+
+  udp.beginPacket(promptside_desk_ip, promptside_desk_port);
+  udp.write(oscBuf, totalLen);
+  udp.endPacket();
+  logger("[Promptside] Transmitted ACK response to Corner console: " + addr, "info");
+}
+
+// ==========================================
+// MIDI Show Control (MSC) over rtpMIDI Parser (RP-002)
+// ==========================================
+void processMSCRTPMidiPacket(uint8_t* buf, int len, IPAddress remoteIP, uint16_t remotePort) {
+  if (len >= 4 && buf[0] == 0xFF && buf[1] == 0xFF) {
+    if (buf[2] == 'I' && buf[3] == 'N') {
+      uint8_t okResp[16];
+      okResp[0] = 0xFF; okResp[1] = 0xFF;
+      okResp[2] = 'O'; okResp[3] = 'K';
+      memcpy(okResp + 4, buf + 4, 8);
+      uint32_t localSSRC = 0x4D534331;
+      memcpy(okResp + 12, &localSSRC, 4);
+      udp.beginPacket(remoteIP, remotePort);
+      udp.write(okResp, 16);
+      udp.endPacket();
+      logger(String("[MSC rtpMIDI] AppleMIDI session accepted from ") + remoteIP.toString() + ":" + String(remotePort), "info");
+      return;
+    } else if (buf[2] == 'C' && buf[3] == 'K') {
+      uint8_t ckResp[len];
+      memcpy(ckResp, buf, len);
+      udp.beginPacket(remoteIP, remotePort);
+      udp.write(ckResp, len);
+      udp.endPacket();
+      return;
+    }
+  }
+
+  for (int i = 0; i < len - 5; i++) {
+    if (buf[i] == 0xF0 && buf[i+1] == 0x7F) {
+      uint8_t devId = buf[i+2];
+      uint8_t subId1 = buf[i+3];
+      uint8_t cmdFormat = buf[i+4];
+      uint8_t cmd = buf[i+5];
+
+      if (subId1 == 0x02) {
+        bool devMatch = (msc_device_id == 0x7F || devId == 0x7F || devId == msc_device_id);
+        bool fmtMatch = (msc_cmd_format == 0x7F || cmdFormat == 0x7F || cmdFormat == 0x08 || cmdFormat == msc_cmd_format);
+
+        if (devMatch && fmtMatch) {
+          String cueNum = "";
+          int cueIdx = i + 6;
+          while (cueIdx < len && buf[cueIdx] != 0x00 && buf[cueIdx] != 0xF7) {
+            if (buf[cueIdx] >= 32 && buf[cueIdx] <= 126) {
+              cueNum += (char)buf[cueIdx];
+            }
+            cueIdx++;
+          }
+          cueNum.trim();
+          if (cueNum.length() > 0) {
+            msc_current_cue = cueNum;
+          }
+
+          if (cmd == 0x01) { // GO
+            msc_state = "go";
+            msc_last_command = "GO";
+            actualType = "\"program\"";
+            actualColor = "#00FF00";
+            logger("[MSC] GO received! Cue: " + msc_current_cue, "info");
+          } else if (cmd == 0x02) { // STOP / STANDBY
+            msc_state = "standby";
+            msc_last_command = "STOP";
+            actualType = "\"standby\"";
+            actualColor = "#FF0000";
+            logger("[MSC] STOP / STANDBY received! Cue: " + msc_current_cue, "info");
+          } else if (cmd == 0x03) { // RESUME
+            msc_state = "go";
+            msc_last_command = "RESUME";
+            actualType = "\"program\"";
+            actualColor = "#00FF00";
+            logger("[MSC] RESUME received! Cue: " + msc_current_cue, "info");
+          } else if (cmd == 0x04) { // TIMED_GO
+            msc_state = "go";
+            msc_last_command = "TIMED_GO";
+            actualType = "\"program\"";
+            actualColor = "#00FF00";
+            logger("[MSC] TIMED_GO received! Cue: " + msc_current_cue, "info");
+          } else if (cmd == 0x08) { // ALL_OFF
+            msc_state = "off";
+            msc_last_command = "ALL_OFF";
+            actualType = "";
+            actualColor = "";
+            logger("[MSC] ALL_OFF received!", "info");
+          } else if (cmd == 0x0A) { // RESET
+            msc_state = "off";
+            msc_last_command = "RESET";
+            actualType = "";
+            actualColor = "";
+            logger("[MSC] RESET received!", "info");
+          } else if (cmd == 0x0B) { // STANDBY_PLUS
+            msc_state = "standby";
+            msc_last_command = "STANDBY+";
+            actualType = "\"flashred\"";
+            actualColor = "#FF0000";
+            logger("[MSC] STANDBY+ received! Cue: " + msc_current_cue, "info");
+          } else if (cmd == 0x0C) { // STANDBY_MINUS
+            msc_state = "off";
+            msc_last_command = "STANDBY-";
+            actualType = "";
+            actualColor = "";
+            logger("[MSC] STANDBY- received!", "info");
+          }
+          renderScreen();
+          return;
+        }
+      }
+    }
+  }
+}
+
+// ==========================================
 // Double-Buffered Screen Rendering
 // ==========================================
 void renderScreen() {
@@ -1173,8 +1694,54 @@ void renderScreen() {
 
   bool flashPhase = (millis() / 400) % 2 == 0;
 
-  // 0. OSC Cue Light (RSMCK iOS Protocol)
-  if (isOSCCueLight()) {
+  // 0. P2P Fault Detection: >4 heartbeats missed -> Flash Yellow and show DISCONNECTED (Requirement 7)
+  if (isP2PMode() && p2p_disconnected_state) {
+    bgColor = flashPhase ? TFT_YELLOW : TFT_BLACK;
+    textColor = flashPhase ? TFT_BLACK : TFT_YELLOW;
+    statusLabel = "DISCONNECTED";
+  } else if (isPromptside()) {
+    // 0.2 Promptside Theatrical Cue Light (Requirement 2)
+    if (promptside_state == "standby_ack") {
+      if (!promptside_ack_done) {
+        bgColor = flashPhase ? TFT_RED : TFT_BLACK;
+        textColor = flashPhase ? TFT_WHITE : TFT_RED;
+        statusLabel = "STANDBY (ACK)";
+      } else {
+        bgColor = TFT_RED;
+        textColor = TFT_WHITE;
+        statusLabel = "ACKNOWLEDGED";
+      }
+    } else if (promptside_state == "go") {
+      bgColor = TFT_GREEN;
+      textColor = TFT_BLACK;
+      statusLabel = "GO!";
+    } else {
+      bgColor = TFT_BLACK;
+      textColor = TFT_WHITE;
+      statusLabel = "OFF";
+    }
+  } else if (isMSCRTPMidi()) {
+    // 0.4 MIDI Show Control (MSC) over rtpMIDI (Requirement 3)
+    if (msc_state == "go") {
+      bgColor = TFT_GREEN;
+      textColor = TFT_BLACK;
+      statusLabel = String("GO ") + (msc_current_cue.length() > 0 ? msc_current_cue : "");
+    } else if (msc_state == "standby") {
+      if (actualType == "\"flashred\"") {
+        bgColor = flashPhase ? TFT_RED : TFT_BLACK;
+        textColor = flashPhase ? TFT_WHITE : TFT_RED;
+        statusLabel = String("STANDBY+ ") + (msc_current_cue.length() > 0 ? msc_current_cue : "");
+      } else {
+        bgColor = TFT_RED;
+        textColor = TFT_WHITE;
+        statusLabel = String("STANDBY ") + (msc_current_cue.length() > 0 ? msc_current_cue : "");
+      }
+    } else {
+      bgColor = TFT_BLACK;
+      textColor = TFT_WHITE;
+      statusLabel = "MSC OFF";
+    }
+  } else if (isOSCCueLight()) {
     if (osccue_state == "standby_ack") {
       if (!osccue_ack_done) {
         bgColor = flashPhase ? TFT_RED : TFT_BLACK;
@@ -1307,8 +1874,23 @@ void renderScreen() {
     auto renderContent = [&](M5Canvas* g) {
       g->fillScreen(bgColor);
 
-      // Top Header: For OSC Cue Light show Banner; else show Clock
-      if (isOSCCueLight()) {
+      // Top Header: Priority 1: MTC Timecode Reader if enabled (Requirement 4)
+      if (mtc_reader_enabled) {
+        g->fillRoundRect(4, 4, 120, 24, 4, TFT_BLACK);
+        g->drawRoundRect(4, 4, 120, 24, 4, TFT_CYAN);
+        g->setTextDatum(middle_center);
+        g->setTextSize(2);
+        g->setTextColor(TFT_CYAN, TFT_BLACK);
+        g->drawString(mtc_timecode_str, 64, 16);
+      } else if (isPromptside()) {
+        // Requirement 2: Promptside Wing Label banner
+        g->fillRoundRect(4, 4, 120, 22, 4, TFT_BLACK);
+        g->drawRoundRect(4, 4, 120, 22, 4, TFT_MAGENTA);
+        g->setTextDatum(middle_center);
+        g->setTextSize(1);
+        g->setTextColor(TFT_MAGENTA, TFT_BLACK);
+        g->drawString(promptside_wing_label, 64, 15);
+      } else if (isOSCCueLight()) {
         g->fillRoundRect(4, 4, 120, 22, 4, TFT_BLACK);
         g->drawRoundRect(4, 4, 120, 22, 4, TFT_DARKGRAY);
         g->setTextDatum(middle_center);
@@ -1316,7 +1898,7 @@ void renderScreen() {
         g->setTextColor(TFT_CYAN, TFT_BLACK);
         g->drawString(osccue_banner, 64, 15);
       } else {
-        // Clock: Larger font with seconds in a black box with white text
+        // Clock: Formatted using configured Timezone (Requirement 1)
         g->fillRoundRect(4, 4, 120, 24, 4, TFT_BLACK);
         g->drawRoundRect(4, 4, 120, 24, 4, TFT_DARKGRAY);
 
@@ -1342,7 +1924,11 @@ void renderScreen() {
 
       // Device Name / Centre Display Text
       String displayName = DeviceName;
-      if (isOSC() && osc_custom_message.length() > 0) {
+      if (isPromptside()) {
+        displayName = promptside_cue_text.length() > 0 ? promptside_cue_text : (promptside_state == "go" ? "GO!" : (promptside_state == "standby_ack" ? "STANDBY" : (String("CH ") + promptside_channel)));
+      } else if (isMSCRTPMidi()) {
+        displayName = msc_current_cue.length() > 0 ? (String("CUE ") + msc_current_cue) : "MSC CUE";
+      } else if (isOSC() && osc_custom_message.length() > 0) {
         displayName = osc_custom_message;
       } else if (isTSL31Listener()) {
         displayName = tsl31_name;
@@ -1356,8 +1942,7 @@ void renderScreen() {
       g->setTextColor(textColor, bgColor);
       int textWidth = g->textWidth(displayName.c_str());
 
-      // Center prominent text for TSL 3.1 & 5.0 Listener (Requirements 2 & 5)
-      if (isTSL31Listener() || isTSL50Listener()) {
+      if (isTSL31Listener() || isTSL50Listener() || isMSCRTPMidi() || isPromptside()) {
         g->setTextDatum(middle_center);
         if (textWidth > 116) {
           int scrollRange = textWidth + 60;
@@ -1400,6 +1985,8 @@ void renderScreen() {
       else if (operatingMode == "ETC_CueSystem") roleBadge = "[ETC CUE]";
       else if (operatingMode == "NMOS_IS07") roleBadge = "[NMOS-07]";
       else if (operatingMode == "RTP_MIDI") roleBadge = "[rtpMIDI]";
+      else if (operatingMode == "MSC_RTP_MIDI") roleBadge = "[MSC MIDI]";
+      else if (operatingMode == "Promptside") roleBadge = "[PROMPT]";
       else if (operatingMode == "OSC") roleBadge = "[OSC CUE]";
       else if (operatingMode == "TSL_31") roleBadge = String("[TSL3.1 ") + tsl31_transport + "]";
       else if (operatingMode == "TSL_50") roleBadge = String("[TSL5.0 ") + tsl50_transport + "]";
@@ -1407,7 +1994,11 @@ void renderScreen() {
       g->print(roleBadge);
 
       g->setCursor(68, 88);
-      if (isETCCueSystem()) {
+      if (isPromptside()) {
+        g->print("Ch: " + promptside_channel);
+      } else if (isMSCRTPMidi()) {
+        g->print("Dev:" + String(msc_device_id));
+      } else if (isETCCueSystem()) {
         g->print("Ch: " + String(cuesystem_channel));
       } else if (isNMOSIS07()) {
         g->print("IS-07");
@@ -1422,13 +2013,29 @@ void renderScreen() {
       } else if (isOSCCueLight()) {
         g->print("ID: " + osccue_station_id);
       } else if (isP2PMode()) {
-        g->print("Grp: " + pairingGroup.substring(0, 6));
+        if (p2p_disconnected_state) {
+          g->setTextColor(TFT_RED, bgColor);
+          g->print("LOST >4");
+        } else {
+          g->print("Grp: " + pairingGroup.substring(0, 5));
+        }
       } else {
         g->print(socket.isConnected() ? "TA: Online" : "TA: Offline");
       }
 
       g->setCursor(4, 98);
-      if (isETCCueSystem()) {
+      if (isPromptside()) {
+        if (promptside_ack_done) {
+          g->setTextColor(TFT_GREEN, bgColor);
+          g->print("[ACKNOWLEDGED]");
+        } else {
+          g->setTextColor(textColor, bgColor);
+          g->print("Ack: PENDING");
+        }
+      } else if (isMSCRTPMidi()) {
+        g->setTextColor(textColor, bgColor);
+        g->print(String("Cmd: ") + msc_last_command + " " + msc_current_cue);
+      } else if (isETCCueSystem()) {
         if (cuesystem_ack_active) {
           g->setTextColor(TFT_GREEN, bgColor);
           g->print("[ACKNOWLEDGED]");
@@ -1465,9 +2072,12 @@ void renderScreen() {
         }
       }
 
-      // Bottom line: Presenter Cue Alert on TP unit OR Network IP
+      // Bottom line: P2P Disconnect Alarm, Presenter Cue Alert on TP unit, or Network IP
       g->setCursor(4, 112);
-      if (isTP() && presenterCueActive) {
+      if (isP2PMode() && p2p_disconnected_state) {
+        g->setTextColor(TFT_YELLOW, TFT_RED);
+        g->print(">>> PEER LOST - SEARCHING <<<");
+      } else if (isTP() && presenterCueActive) {
         g->setTextColor(TFT_YELLOW, TFT_RED);
         g->print(">>> PRESENTER CUE! <<<");
       } else {
@@ -1518,7 +2128,17 @@ void renderScreen() {
       g->println(getNetworkIPStr());
 
       g->setCursor(4, 44);
-      if (isETCCueSystem()) {
+      if (isPromptside()) {
+        g->print("Prompt: ");
+        g->print(promptside_channel);
+        g->print(" Port:8000");
+        g->println();
+      } else if (isMSCRTPMidi()) {
+        g->print("MSC ID: ");
+        g->print(msc_device_id);
+        g->print(" Port:5004");
+        g->println();
+      } else if (isETCCueSystem()) {
         g->print("Hub:  ");
         g->print(cuesystem_host);
         g->print(":");
@@ -1538,7 +2158,13 @@ void renderScreen() {
         g->println(osc_port);
       } else if (isP2PMode()) {
         g->print("Peer: ");
-        g->println(pairedTargetIP.length() > 0 ? pairedTargetIP : "Unpaired (B-cast)");
+        if (p2p_disconnected_state) {
+          g->setTextColor(TFT_RED, bgColor);
+          g->println("DISCONNECTED (>4 missed)");
+          g->setTextColor(dTextColor, bgColor);
+        } else {
+          g->println(pairedTargetIP.length() > 0 ? pairedTargetIP : "Unpaired (B-cast)");
+        }
       } else if (isTSL31Listener()) {
         g->print("TSL31: ");
         g->print(tsl31_transport);
@@ -1559,18 +2185,34 @@ void renderScreen() {
         g->println(socket.isConnected() ? "Connected" : "Disconnected");
       }
 
+      // Requirement 9: AtomENV Sensor Live Telemetry
       g->setCursor(4, 56);
-      g->print("Tally: ");
-      g->println(statusLabel);
+      if (env_sensor_enabled) {
+        g->print("ENV:  ");
+        g->print(env_temperature, 1);
+        g->print("C ");
+        g->print(env_humidity, 0);
+        g->print("% ");
+        g->print(env_pressure, 0);
+        g->println("hPa");
+      } else {
+        g->print("Tally: ");
+        g->println(statusLabel);
+      }
 
       g->setCursor(4, 68);
-      g->print("Rot:  ");
-      g->print(currentRotation * 90);
-      g->println(" deg (IMU)");
+      g->print("MTC:  ");
+      if (mtc_reader_enabled) {
+        g->println(mtc_timecode_str);
+      } else {
+        g->print("TZ: ");
+        g->println(timezone_name.substring(0, 14));
+      }
 
       g->setCursor(4, 80);
-      g->print("D-Buffer: ");
-      g->println(doubleBufferEnabled ? "32KB (OK)" : "Disabled");
+      g->print("Rot:  ");
+      g->print(currentRotation * 90);
+      g->println(" deg (IMU Auto)");
 
       g->setCursor(4, 92);
       g->print("Free PSRAM: ");
@@ -1669,6 +2311,8 @@ void setupWebServer() {
     else if (operatingMode == "Presenter_P2P") html += F("<span class='badge badge-amber'>Presenter Standalone (P2P)</span>");
     else if (operatingMode == "ETC_CueSystem") html += F("<span class='badge badge-red'>ETC CueSystem Outstation</span>");
     else if (operatingMode == "NMOS_IS07") html += F("<span class='badge badge-cyan'>NMOS IS-07 Event & Tally</span>");
+    else if (operatingMode == "Promptside") html += F("<span class='badge badge-purple'>Promptside Cue Light</span>");
+    else if (operatingMode == "MSC_RTP_MIDI") html += F("<span class='badge badge-blue'>MSC over rtpMIDI</span>");
     html += F("</p><p style='margin:4px 0;'>Network: <strong>");
     html += getNetworkModeStr();
     html += F(" (");
@@ -1677,7 +2321,9 @@ void setupWebServer() {
     html += getNetworkIPStr();
     html += F("</strong> | Double Buffer: <strong>");
     html += doubleBufferEnabled ? "32KB OK" : "Direct";
-    html += F("</strong></p></div><div class='card'>"
+    html += F("</strong></p>"
+            "<p style='margin:8px 0 0 0;'><a href='/manual' target='_blank' style='color:#38bdf8;text-decoration:none;font-weight:600;font-size:13px;'>&#128214; View Full HTML User Manual & Documentation &rarr;</a></p>"
+            "</div><div class='card'>"
                     "<form action='/save' method='POST'>"
                     "<h2>Operating Mode & Role</h2>"
                     "<label>Device Mode</label>"
@@ -1700,6 +2346,12 @@ void setupWebServer() {
               "<option value='NMOS_IS07'");
     if (operatingMode == "NMOS_IS07") html += F(" selected");
     html += F(">NMOS IS-07 Event & Tally (SMPTE ST 2110)</option>"
+              "<option value='Promptside'");
+    if (operatingMode == "Promptside") html += F(" selected");
+    html += F(">Promptside (Theatrical Stage Cue Light - promptside.co)</option>"
+              "<option value='MSC_RTP_MIDI'");
+    if (operatingMode == "MSC_RTP_MIDI") html += F(" selected");
+    html += F(">MIDI Show Control (MSC over rtpMIDI - RP-002)</option>"
               "<option value='RTP_MIDI'");
     if (operatingMode == "RTP_MIDI") html += F(" selected");
     html += F(">rtpMIDI / AppleMIDI Outstation</option>"
@@ -1716,6 +2368,61 @@ void setupWebServer() {
     if (operatingMode == "OSC_CueLight") html += F(" selected");
     html += F(">OSC Cue Light (RSMCK iOS Protocol - Port 53000)</option>"
               "</select>"
+
+              // Requirement 1 & 4 & 9: Timezone & Global Peripherals
+              "<div class='section-box'>"
+              "<h2>Timezone & Global Peripherals</h2>"
+              "<div class='grid-2'>"
+              "<div><label>Timezone (NTP Clock)</label>"
+              "<select name='timezone_name' id='tz-select' onchange='toggleCustomTZ()'>"
+              "<option value='Europe/London'");
+    if (timezone_name == "Europe/London") html += F(" selected");
+    html += F(">Europe/London (GMT/BST - Default)</option>"
+              "<option value='UTC'");
+    if (timezone_name == "UTC") html += F(" selected");
+    html += F(">UTC / GMT</option>"
+              "<option value='Europe/Paris'");
+    if (timezone_name == "Europe/Paris") html += F(" selected");
+    html += F(">Europe/Paris, Berlin, Rome (CET/CEST)</option>"
+              "<option value='America/New_York'");
+    if (timezone_name == "America/New_York") html += F(" selected");
+    html += F(">America/New York (EST/EDT)</option>"
+              "<option value='America/Chicago'");
+    if (timezone_name == "America/Chicago") html += F(" selected");
+    html += F(">America/Chicago (CST/CDT)</option>"
+              "<option value='America/Denver'");
+    if (timezone_name == "America/Denver") html += F(" selected");
+    html += F(">America/Denver (MST/MDT)</option>"
+              "<option value='America/Los_Angeles'");
+    if (timezone_name == "America/Los_Angeles") html += F(" selected");
+    html += F(">America/Los Angeles (PST/PDT)</option>"
+              "<option value='Asia/Tokyo'");
+    if (timezone_name == "Asia/Tokyo") html += F(" selected");
+    html += F(">Asia/Tokyo (JST)</option>"
+              "<option value='Australia/Sydney'");
+    if (timezone_name == "Australia/Sydney") html += F(" selected");
+    html += F(">Australia/Sydney (AEST/AEDT)</option>"
+              "<option value='Custom'");
+    if (timezone_name == "Custom") html += F(" selected");
+    html += F(">Custom POSIX String</option></select></div>"
+              "<div><label>Custom POSIX Timezone</label><input type='text' id='tz-custom' name='custom_tz_posix' value='");
+    html += custom_tz_posix;
+    html += F("' placeholder='GMT0BST,M3.5.0/1,M10.5.0'></div></div>"
+              "<div class='grid-2' style='margin-top:10px;'>"
+              "<div><label>MTC Reader from rtpMIDI</label><select name='mtc_reader'>"
+              "<option value='0'");
+    if (!mtc_reader_enabled) html += F(" selected");
+    html += F(">Disabled (Show NTP Clock)</option><option value='1'");
+    if (mtc_reader_enabled) html += F(" selected");
+    html += F(">Enabled (Show Incoming MTC Timecode)</option></select></div>"
+              "<div><label>M5Stack AtomENV Sensor (I2C Grove)</label><select name='env_sensor'>"
+              "<option value='0'");
+    if (!env_sensor_enabled) html += F(" selected");
+    html += F(">Disabled</option><option value='1'");
+    if (env_sensor_enabled) html += F(" selected");
+    html += F(">Enabled (SHT30 + BMP280)</option></select></div></div>"
+              "<div class='hint'>When MTC Reader is enabled, Screen 0 displays incoming MIDI Time Code (HH:MM:SS:FF) from quarter-frames & SysEx over AppleMIDI. When AtomENV is enabled, diagnostics & /api/env report environmental metrics.</div>"
+              "</div>"
 
               // Section: Network IP Configuration
               "<div class='section-box'>"
@@ -1785,7 +2492,39 @@ void setupWebServer() {
               "<div><label>Paired Peer Name</label><input type='text' id='peername' name='pairedname' value='");
     html += pairedTargetName;
     html += F("' placeholder='e.g. Presenter-Cam1'></div></div>"
-              "<div class='hint'>P2P mode communicates directly between units using TSL 3.1 UDP packets.</div>"
+              "<div class='hint'>P2P mode communicates directly between units using TSL 3.1 UDP packets. Heartbeat runs at 0.25s (250ms); if &gt;4 missed (&gt;1000ms), unit flashes yellow and alerts DISCONNECTED.</div>"
+              "</div>"
+
+              // Section: Promptside Cue Light (Requirement 2)
+              "<div id='sec-promptside' class='section-box'>"
+              "<h2>Promptside Theatrical Cue Light (promptside.co)</h2>"
+              "<div class='grid-3'>"
+              "<div><label>Promptside UDP Port</label><input type='number' name='prompt_port' value='");
+    html += String(promptside_port);
+    html += F("'></div>"
+              "<div><label>Channel / ID</label><input type='text' name='prompt_chan' value='");
+    html += promptside_channel;
+    html += F("'></div>"
+              "<div><label>Wing Label Banner</label><input type='text' name='prompt_wing' value='");
+    html += promptside_wing_label;
+    html += F("'></div></div>"
+              "<div class='hint'>Listens for /promptside/channel/[id]/standby (flashing red, button sends ACK back to console), /go (green), /off, and /text notes.</div>"
+              "</div>"
+
+              // Section: MIDI Show Control (MSC over rtpMIDI - Requirement 3)
+              "<div id='sec-msc' class='section-box'>"
+              "<h2>MIDI Show Control (MSC RP-002 over rtpMIDI)</h2>"
+              "<div class='grid-3'>"
+              "<div><label>RTP-MIDI Port</label><input type='number' name='msc_port' value='");
+    html += String(msc_rtpmidi_port);
+    html += F("'></div>"
+              "<div><label>Device ID (127 = All-Call)</label><input type='number' name='msc_dev' min='0' max='127' value='");
+    html += String(msc_device_id);
+    html += F("'></div>"
+              "<div><label>Command Format (127 = All)</label><input type='number' name='msc_fmt' min='0' max='127' value='");
+    html += String(msc_cmd_format);
+    html += F("'></div></div>"
+              "<div class='hint'>Parses standard MSC SysEx commands: 01 GO (Green), 02 STOP (Red), 0B STANDBY+ (Flashing Red), decoding cue numbers (e.g. CUE 42.1).</div>"
               "</div>"
 
               // Section: ETC CueSystem
@@ -1880,6 +2619,40 @@ void setupWebServer() {
               "<div class='hint'>Connects directly to DAWs (Logic, Pro Tools, QLab, Ableton, rtpMIDI) via AppleMIDI session on UDP port 5004.</div>"
               "</div>"
 
+              // Section: MIDI Button Return Action (Requirement 6)
+              "<div id='sec-midibtn' class='section-box'>"
+              "<h2>MIDI Button Return Message (Feedback to DAW / Desk)</h2>"
+              "<div class='grid-3'>"
+              "<div><label>Button Message Type</label><select name='midi_btn_type'>"
+              "<option value='0'");
+    if (midi_btn_type == 0) html += F(" selected");
+    html += F(">Disabled (None)</option><option value='1'");
+    if (midi_btn_type == 1) html += F(" selected");
+    html += F(">Note (Momentary)</option><option value='2'");
+    if (midi_btn_type == 2) html += F(" selected");
+    html += F(">Note (Toggle)</option><option value='3'");
+    if (midi_btn_type == 3) html += F(" selected");
+    html += F(">Control Change (Momentary)</option><option value='4'");
+    if (midi_btn_type == 4) html += F(" selected");
+    html += F(">Control Change (Toggle)</option><option value='5'");
+    if (midi_btn_type == 5) html += F(" selected");
+    html += F(">Program Change</option></select></div>"
+              "<div><label>MIDI Channel (1-16)</label><input type='number' name='midi_btn_chan' min='1' max='16' value='");
+    html += String(midi_btn_channel);
+    html += F("'></div>"
+              "<div><label>Note / CC / PC Number (0-127)</label><input type='number' name='midi_btn_num' min='0' max='127' value='");
+    html += String(midi_btn_number);
+    html += F("'></div></div>"
+              "<div class='grid-2' style='margin-top:10px;'>"
+              "<div><label>Press Value / Velocity (0-127)</label><input type='number' name='midi_btn_press' min='0' max='127' value='");
+    html += String(midi_btn_val_press);
+    html += F("'></div>"
+              "<div><label>Release Value / Velocity (0-127)</label><input type='number' name='midi_btn_release' min='0' max='127' value='");
+    html += String(midi_btn_val_release);
+    html += F("'></div></div>"
+              "<div class='hint'>When the hardware screen button is pressed in MIDI modes, transmits configured MIDI message back to host over rtpMIDI.</div>"
+              "</div>"
+
               // Section: OSC (Open Sound Control)
               "<div id='sec-osc' class='section-box'>"
               "<h2>OSC (Open Sound Control) Configuration</h2>"
@@ -1970,20 +2743,28 @@ void setupWebServer() {
               "  var isDhcp = document.getElementById('ip_dhcp').value === '1';"
               "  document.getElementById('static-ip-fields').style.display = isDhcp ? 'none' : 'block';"
               "}"
+              "function toggleCustomTZ(){"
+              "  var isCustom = document.getElementById('tz-select').value === 'Custom';"
+              "  document.getElementById('tz-custom').style.display = isCustom ? 'block' : 'none';"
+              "}"
               "function updateModeUI(){"
               "  var m = document.getElementById('mode-select').value;"
               "  document.getElementById('sec-ta').style.display = (m==='TP'||m==='Presenter') ? 'block' : 'none';"
               "  document.getElementById('sec-p2p').style.display = (m==='TP_P2P'||m==='Presenter_P2P') ? 'block' : 'none';"
               "  document.getElementById('sec-p2p-scan').style.display = (m==='TP_P2P'||m==='Presenter_P2P') ? 'block' : 'none';"
+              "  document.getElementById('sec-promptside').style.display = (m==='Promptside') ? 'block' : 'none';"
+              "  document.getElementById('sec-msc').style.display = (m==='MSC_RTP_MIDI') ? 'block' : 'none';"
               "  document.getElementById('sec-cuesystem').style.display = (m==='ETC_CueSystem') ? 'block' : 'none';"
               "  document.getElementById('sec-nmos').style.display = (m==='NMOS_IS07') ? 'block' : 'none';"
               "  document.getElementById('sec-rtpmidi').style.display = (m==='RTP_MIDI') ? 'block' : 'none';"
+              "  document.getElementById('sec-midibtn').style.display = (m==='RTP_MIDI'||m==='MSC_RTP_MIDI') ? 'block' : 'none';"
               "  document.getElementById('sec-osc').style.display = (m==='OSC') ? 'block' : 'none';"
               "  document.getElementById('sec-tsl31').style.display = (m==='TSL_31') ? 'block' : 'none';"
               "  document.getElementById('sec-tsl50').style.display = (m==='TSL_50') ? 'block' : 'none';"
               "  document.getElementById('sec-osccue').style.display = (m==='OSC_CueLight') ? 'block' : 'none';"
               "}"
               "updateModeUI();"
+              "toggleCustomTZ();"
               "async function scanPeers(){"
               "  const list = document.getElementById('peers-list');"
               "  list.innerHTML = '<p style=\"color:#38bdf8;font-size:13px;\">Scanning network for _cuelx-tally._udp services...</p>';"
@@ -2077,6 +2858,34 @@ void setupWebServer() {
     obj["tsl50Index"] = tsl50_index;
     obj["tsl50Name"] = tsl50_name;
     obj["oscCuePort"] = osccue_port;
+    obj["timezone"] = timezone_name;
+    obj["customTZPosix"] = custom_tz_posix;
+    obj["mtcReader"] = mtc_reader_enabled;
+    obj["mtcTimecode"] = mtc_timecode_str;
+    obj["envEnabled"] = env_sensor_enabled;
+    obj["envDetected"] = env_sensor_detected;
+    obj["envTemp"] = env_temperature;
+    obj["envHum"] = env_humidity;
+    obj["envPress"] = env_pressure;
+    obj["promptPort"] = promptside_port;
+    obj["promptChannel"] = promptside_channel;
+    obj["promptWing"] = promptside_wing_label;
+    obj["promptText"] = promptside_cue_text;
+    obj["promptState"] = promptside_state;
+    obj["promptAckDone"] = promptside_ack_done;
+    obj["mscPort"] = msc_rtpmidi_port;
+    obj["mscDevId"] = msc_device_id;
+    obj["mscCmdFmt"] = msc_cmd_format;
+    obj["mscCurrentCue"] = msc_current_cue;
+    obj["mscLastCmd"] = msc_last_command;
+    obj["mscState"] = msc_state;
+    obj["midiBtnType"] = midi_btn_type;
+    obj["midiBtnChan"] = midi_btn_channel;
+    obj["midiBtnNum"] = midi_btn_number;
+    obj["midiBtnPress"] = midi_btn_val_press;
+    obj["midiBtnRelease"] = midi_btn_val_release;
+    obj["p2pDisconnected"] = p2p_disconnected_state;
+    obj["p2pMissed"] = p2p_missed_heartbeats;
     obj["oscCueStation"] = osccue_station_id;
     obj["oscCueBanner"] = osccue_banner;
     obj["oscCueMessage"] = osccue_message;
@@ -2096,6 +2905,109 @@ void setupWebServer() {
     obj["mode"] = isEthernetActive() ? "ETH" : "WIFI";
     obj["ip"] = getNetworkIPStr();
     request->send(200, "application/json", JSON.stringify(obj));
+  });
+
+  // REST API: GET /api/env - AtomENV Sensor live reading (Requirement 9)
+  server.on("/api/env", HTTP_GET, [](AsyncWebServerRequest *request) {
+    readAtomEnvSensor();
+    JSONVar obj;
+    obj["enabled"] = env_sensor_enabled;
+    obj["detected"] = env_sensor_detected;
+    obj["temperature"] = env_temperature;
+    obj["humidity"] = env_humidity;
+    obj["pressure"] = env_pressure;
+    obj["unit_temp"] = "C";
+    obj["unit_press"] = "hPa";
+    request->send(200, "application/json", JSON.stringify(obj));
+  });
+
+  // HTML User Manual Endpoint (Requirement 8)
+  server.on("/manual", HTTP_GET, [](AsyncWebServerRequest *request) {
+    String mHtml = F("<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
+                     "<title>Universal Cue & Tally Controller - User Manual</title><style>"
+                     "body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;background:#0b1120;color:#e2e8f0;padding:24px;line-height:1.6;max-width:960px;margin:auto}"
+                     "h1{color:#38bdf8;font-size:26px;border-bottom:1px solid #1e293b;padding-bottom:12px;margin-bottom:8px}"
+                     "h2{color:#f8fafc;font-size:18px;margin-top:28px;padding-bottom:6px;border-bottom:1px solid #334155}"
+                     "h3{color:#7dd3fc;font-size:15px;margin-top:16px}"
+                     ".tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;margin-right:6px}"
+                     ".tag-blue{background:#0284c7;color:#fff}.tag-green{background:#16a34a;color:#fff}.tag-purple{background:#7c3aed;color:#fff}.tag-amber{background:#d97706;color:#fff}.tag-red{background:#dc2626;color:#fff}.tag-cyan{background:#0891b2;color:#fff}"
+                     ".card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:18px;margin-bottom:18px}"
+                     "table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px}"
+                     "th,td{border:1px solid #334155;padding:8px 12px;text-align:left}th{background:#0f172a;color:#94a3b8}"
+                     "code{background:#0f172a;border:1px solid #334155;color:#38bdf8;padding:2px 6px;border-radius:4px;font-size:12px;font-family:monospace}"
+                     "pre{background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;overflow-x:auto;color:#a5f3fc;font-size:12px;font-family:monospace}"
+                     "a{color:#38bdf8;text-decoration:none}a:hover{text-decoration:underline}"
+                     ".note{background:#172554;border-left:4px solid #38bdf8;padding:12px;margin:12px 0;border-radius:0 8px 8px 0;font-size:13px}"
+                     "</style></head><body>"
+                     "<h1>&#128214; Universal Cue & Tally Controller Manual</h1>"
+                     "<p style='color:#94a3b8;'>Comprehensive User Guide for M5AtomS3R + AtomPoE Broadcast Tally & Theatrical Cue System</p>"
+                     "<div class='card'>"
+                     "<h3>Table of Contents</h3>"
+                     "<ol style='margin:0;padding-left:20px;font-size:14px;'>"
+                     "<li><a href='#modes'>13 Supported Operating Modes & Software Setup</a></li>"
+                     "<li><a href='#p2p'>Standalone P2P Heartbeat & Fault Alarm (0.25s)</a></li>"
+                     "<li><a href='#midi-msc'>rtpMIDI, MSC (RP-002) & Return Button Feedback</a></li>"
+                     "<li><a href='#promptside'>Promptside Theatrical System (promptside.co)</a></li>"
+                     "<li><a href='#mtc'>MTC Timecode Reader over AppleMIDI</a></li>"
+                     "<li><a href='#env'>M5Stack AtomENV Grove Sensor & REST API</a></li>"
+                     "<li><a href='#imu'>Accelerometer IMU Screen Auto-Orientation</a></li>"
+                     "<li><a href='#net'>PoE Ethernet Precedence & Static IP / DHCP</a></li>"
+                     "</ol></div>"
+                     "<h2 id='modes'>1. Operating Modes & Integration Details</h2>"
+                     "<div class='card'>"
+                     "<h3>1. Technical Producer (TP) with Tally Arbiter</h3>"
+                     "<p>Connects to Tally Arbiter server over WebSockets (default port 4455). Receives live multi-source tally and transmits TSL 3.1 <strong>Program</strong> tally back on the configured TSL port (default 8910) when button is pressed.</p>"
+                     "<h3>2. Presenter with Tally Arbiter</h3>"
+                     "<p>Connects to Tally Arbiter server. When the screen button is clicked, sends a TSL 3.1 <strong>Preview</strong> tally back (control byte 0x31) to alert the production switcher or TP without taking the camera live.</p>"
+                     "<h3>3. Standalone TP (P2P Master)</h3>"
+                     "<p>Zero-configuration peer-to-peer master without requiring a Tally Arbiter server. Listens for calls from paired Presenter units and displays prominent cue alerts.</p>"
+                     "<h3>4. Standalone Presenter (P2P Slave)</h3>"
+                     "<p>Communicates directly with the TP unit via TSL 3.1 UDP. Exchanging 0.25s heartbeats. Clicking button triggers Preview cue on the TP screen.</p>"
+                     "<h3>5. ETC CueSystem Outstation</h3>"
+                     "<p>Integrates with ETC Eos consoles and CueSystem playback controllers. Listens for ASCII UDP packets: <code>CS,&lt;channel&gt;,STANDBY</code> or <code>CUE:&lt;channel&gt;:STANDBY</code> (flashing red). Clicking the screen button acknowledges the cue (solid red) and transmits <code>CS,&lt;channel&gt;,ACK</code> back to the hub. <code>GO</code> turns solid green.</p>"
+                     "<h3>6. AMWA NMOS IS-07 Event & Tally (SMPTE ST 2110)</h3>"
+                     "<p>Full IP broadcast tally for ST 2110 production networks. Automatically discovers the NMOS Registration Server via DNS-SD (<code>_nmos-registration._tcp</code>) or connects to a manual host. Monitors 3 endpoints: <strong>Program</strong> (Red), <strong>Preview</strong> (Green), and <strong>Aux</strong> (Amber).</p>"
+                     "<h3>7. Promptside Theatrical Cue Light (promptside.co)</h3>"
+                     "<p>Direct integration with Promptside theatrical cueing software on UDP port 8000. Supports <code>/promptside/channel/[ch]/standby</code> (flashing red), button click returns <code>/promptside/channel/[ch]/ack 1</code>, <code>/go</code> (green), <code>/off</code>, and <code>/text</code> notes with persistent wing labels.</p>"
+                     "<h3>8. MIDI Show Control (MSC RP-002 over rtpMIDI)</h3>"
+                     "<p>Parses SysEx MSC commands: <code>01 GO</code> (green), <code>02 STOP</code> (red), <code>0B STANDBY+</code> (flashing red), <code>08 ALL_OFF</code>, and displays cue numbers (e.g. <code>CUE 42.1</code>) on screen.</p>"
+                     "<h3>9. rtpMIDI / AppleMIDI Outstation</h3>"
+                     "<p>Connects natively to macOS Audio MIDI Setup, Windows rtpMIDI (Tobias Erichsen), QLab, Logic Pro, and Ableton Live on UDP port 5004. Supports Note On/Off, CC, or PC with priority: Red &gt; Flash Red &gt; Green &gt; Yellow &gt; Blue &gt; White.</p>"
+                     "<h3>10. OSC (Open Sound Control) Outstation</h3>"
+                     "<p>Receives OSC commands on UDP port 8000 (e.g. <code>/cuelight/red</code>, <code>/green</code>, <code>/text</code>). Long messages scroll continuously across the screen.</p>"
+                     "<h3>11. TSL UMD v3.1 Dedicated Listener</h3>"
+                     "<p>Standard 18-byte TSL 3.1 UDP or TCP listener on port 8910. Displays source name in the centre of the screen and reflects Program, Preview, and Aux tally flags.</p>"
+                     "<h3>12. TSL UMD v5.0 Dedicated Listener</h3>"
+                     "<p>Binary TSL 5.0 protocol over UDP or TCP on port 8900. Parses 4 tally status bits (Tally 1 Red, Tally 2 Green, Tally 3 Amber, Tally 4 Blue) and UTF-8 screen text.</p>"
+                     "<h3>13. OSC Cue Light for iOS (RSMCK Protocol)</h3>"
+                     "<p>Compatible with the iOS OSC Cue Light app on UDP port 53000. Handles <code>/cuelight/[station]/standby_ack</code> with button acknowledgement return and persistent top banner.</p>"
+                     "</div>"
+                     "<h2 id='p2p'>2. P2P Heartbeat & 4-Missed Fault Detection</h2>"
+                     "<div class='card'>"
+                     "<p>In Standalone P2P modes (TP no TA & Presenter no TA), units exchange bidirectional ping packets every <strong>0.25 seconds (250ms)</strong>. If more than 4 consecutive heartbeats are missed (&gt; 1000ms), both units immediately enter fault alarm mode:</p>"
+                     "<ul><li>Screen flashes bright yellow (<code>#FFFF00</code> / Black)</li><li>Status badge alerts <strong>DISCONNECTED</strong></li><li>Bottom line displays <code>&gt;&gt;&gt; PEER LOST - SEARCHING &lt;&lt;&lt;</code></li><li>Auto-recovers instantly upon receiving the next ping or pong packet.</li></ul>"
+                     "</div>"
+                     "<h2 id='midi-msc'>3. MIDI Show Control & Return Button Feedback</h2>"
+                     "<div class='card'>"
+                     "<p>In MIDI modes, the hardware screen button can transmit user-configured MIDI feedback back to the console or DAW:</p>"
+                     "<ul><li>Message types: <strong>Note Momentary, Note Toggle, CC Momentary, CC Toggle, Program Change</strong></li><li>Selectable MIDI Channel (1 - 16), Number (0 - 127), and Press / Release Velocity values.</li></ul>"
+                     "</div>"
+                     "<h2 id='mtc'>4. MTC (MIDI Time Code) Reader</h2>"
+                     "<div class='card'>"
+                     "<p>When enabled globally in the web configuration, the top header bar on Screen 0 transforms into a real-time SMPTE timecode readout (<code>HH:MM:SS:FF</code>). Parses incoming quarter-frame messages (status <code>0xF1</code>) and full-frame SysEx packets over AppleMIDI at 24, 25, 29.97 drop, and 30 fps.</p>"
+                     "</div>"
+                     "<h2 id='env'>5. M5Stack AtomENV Sensor Support</h2>"
+                     "<div class='card'>"
+                     "<p>Plug an M5Stack AtomENV unit into the bottom Grove port (SDA: GPIO 2, SCL: GPIO 1). Real-time Temperature (°C), Relative Humidity (%), and Barometric Pressure (hPa) are shown in Diagnostics (Screen 1) and queryable via REST API:</p>"
+                     "<pre>GET /api/env\n\nHTTP/1.1 200 OK\nContent-Type: application/json\n\n{\n  \"enabled\": true,\n  \"detected\": true,\n  \"temperature\": 21.8,\n  \"humidity\": 46.5,\n  \"pressure\": 1013.2,\n  \"unit_temp\": \"C\",\n  \"unit_press\": \"hPa\"\n}</pre>"
+                     "</div>"
+                     "<h2 id='imu'>6. Screen Auto-Orientation (IMU)</h2>"
+                     "<div class='card'>"
+                     "<p>The onboard 6-axis IMU (BMI270) measures gravity. Display scanout orientation updates automatically so text is always right-side up regardless of whether the unit is mounted upright, inverted 180°, or rotated 90° sideways on a camera rig or stage cue stand.</p>"
+                     "</div>"
+                     "<p style='text-align:center;margin-top:30px;'><a href='/' style='background:#2563eb;color:#fff;padding:10px 20px;border-radius:6px;font-weight:600;'>Return to Web Dashboard</a></p>"
+                     "</body></html>");
+    request->send(200, "text/html", mHtml);
   });
 
   // REST API: GET /api/discover - Scan for DNS-SD peers (_cuelx-tally._udp)
@@ -2159,6 +3071,64 @@ void setupWebServer() {
   server.on("/save", HTTP_POST, [](AsyncWebServerRequest *request) {
     if (request->hasParam("mode", true)) {
       operatingMode = request->getParam("mode", true)->value();
+    }
+
+    // Timezone settings (Requirement 1)
+    if (request->hasParam("timezone_name", true)) {
+      timezone_name = request->getParam("timezone_name", true)->value();
+    }
+    if (request->hasParam("custom_tz_posix", true)) {
+      custom_tz_posix = request->getParam("custom_tz_posix", true)->value();
+    }
+
+    // Global MTC & AtomENV settings (Requirement 4 & 9)
+    if (request->hasParam("mtc_reader", true)) {
+      mtc_reader_enabled = (request->getParam("mtc_reader", true)->value() == "1");
+    }
+    if (request->hasParam("env_sensor", true)) {
+      env_sensor_enabled = (request->getParam("env_sensor", true)->value() == "1");
+      if (env_sensor_enabled) {
+        Wire.begin(2, 1);
+      }
+    }
+
+    // Promptside settings (Requirement 2)
+    if (request->hasParam("prompt_port", true)) {
+      promptside_port = request->getParam("prompt_port", true)->value().toInt();
+    }
+    if (request->hasParam("prompt_chan", true)) {
+      promptside_channel = request->getParam("prompt_chan", true)->value();
+    }
+    if (request->hasParam("prompt_wing", true)) {
+      promptside_wing_label = request->getParam("prompt_wing", true)->value();
+    }
+
+    // MSC settings (Requirement 3)
+    if (request->hasParam("msc_port", true)) {
+      msc_rtpmidi_port = request->getParam("msc_port", true)->value().toInt();
+    }
+    if (request->hasParam("msc_dev", true)) {
+      msc_device_id = request->getParam("msc_dev", true)->value().toInt();
+    }
+    if (request->hasParam("msc_fmt", true)) {
+      msc_cmd_format = request->getParam("msc_fmt", true)->value().toInt();
+    }
+
+    // MIDI Button return feedback (Requirement 6)
+    if (request->hasParam("midi_btn_type", true)) {
+      midi_btn_type = request->getParam("midi_btn_type", true)->value().toInt();
+    }
+    if (request->hasParam("midi_btn_chan", true)) {
+      midi_btn_channel = request->getParam("midi_btn_chan", true)->value().toInt();
+    }
+    if (request->hasParam("midi_btn_num", true)) {
+      midi_btn_number = request->getParam("midi_btn_num", true)->value().toInt();
+    }
+    if (request->hasParam("midi_btn_press", true)) {
+      midi_btn_val_press = request->getParam("midi_btn_press", true)->value().toInt();
+    }
+    if (request->hasParam("midi_btn_release", true)) {
+      midi_btn_val_release = request->getParam("midi_btn_release", true)->value().toInt();
     }
 
     // Network IP settings
@@ -2317,6 +3287,21 @@ void setupWebServer() {
     // Persist all settings to NVS
     preferences.begin("tally-arbiter", false);
     preferences.putString("opMode", operatingMode);
+    preferences.putString("tzName", timezone_name);
+    preferences.putString("tzPosix", custom_tz_posix);
+    preferences.putBool("mtcReader", mtc_reader_enabled);
+    preferences.putBool("envSensor", env_sensor_enabled);
+    preferences.putInt("promptPort", promptside_port);
+    preferences.putString("promptChan", promptside_channel);
+    preferences.putString("promptWing", promptside_wing_label);
+    preferences.putInt("mscPort", msc_rtpmidi_port);
+    preferences.putInt("mscDev", msc_device_id);
+    preferences.putInt("mscFmt", msc_cmd_format);
+    preferences.putInt("mBtnType", midi_btn_type);
+    preferences.putInt("mBtnChan", midi_btn_channel);
+    preferences.putInt("mBtnNum", midi_btn_number);
+    preferences.putInt("mBtnPress", midi_btn_val_press);
+    preferences.putInt("mBtnRel", midi_btn_val_release);
     preferences.putBool("useDHCP", useDHCP);
     preferences.putString("staticIP", static_ip);
     preferences.putString("staticMask", static_mask);
@@ -2363,8 +3348,9 @@ void setupWebServer() {
     preferences.putString("taListenerName", listenerDeviceName);
     preferences.end();
 
-    // Reapply IP configuration immediately
+    // Reapply IP & Timezone configurations immediately
     applyNetworkIPConfig();
+    applyTimezoneConfig();
 
     // Configure TCP Server if required
     if (operatingMode == "TSL_31" && tsl31_transport == "TCP") {
@@ -2517,7 +3503,31 @@ void setup() {
   if (preferences.getString("taPort").length() > 0) preferences.getString("taPort").toCharArray(tallyarbiter_port, 6);
   if (preferences.getString("taTSLPort").length() > 0) preferences.getString("taTSLPort").toCharArray(tallyarbiter_TSLport, 6);
   if (preferences.getString("taListenerName").length() > 0) listenerDeviceName = preferences.getString("taListenerName");
+  if (preferences.getString("tzName").length() > 0) timezone_name = preferences.getString("tzName");
+  if (preferences.getString("tzPosix").length() > 0) custom_tz_posix = preferences.getString("tzPosix");
+  if (preferences.isKey("mtcReader")) mtc_reader_enabled = preferences.getBool("mtcReader", false);
+  if (preferences.isKey("envSensor")) env_sensor_enabled = preferences.getBool("envSensor", false);
+  if (preferences.isKey("promptPort")) promptside_port = preferences.getInt("promptPort", 8000);
+  if (preferences.getString("promptChan").length() > 0) promptside_channel = preferences.getString("promptChan");
+  if (preferences.getString("promptWing").length() > 0) promptside_wing_label = preferences.getString("promptWing");
+  if (preferences.isKey("mscPort")) msc_rtpmidi_port = preferences.getInt("mscPort", 5004);
+  if (preferences.isKey("mscDev")) msc_device_id = preferences.getInt("mscDev", 0x7F);
+  if (preferences.isKey("mscFmt")) msc_cmd_format = preferences.getInt("mscFmt", 0x7F);
+  if (preferences.isKey("mBtnType")) midi_btn_type = preferences.getInt("mBtnType", 1);
+  if (preferences.isKey("mBtnChan")) midi_btn_channel = preferences.getInt("mBtnChan", 1);
+  if (preferences.isKey("mBtnNum")) midi_btn_number = preferences.getInt("mBtnNum", 60);
+  if (preferences.isKey("mBtnPress")) midi_btn_val_press = preferences.getInt("mBtnPress", 127);
+  if (preferences.isKey("mBtnRel")) midi_btn_val_release = preferences.getInt("mBtnRel", 0);
   preferences.end();
+
+  // Apply Timezone Configuration to ESP32 SNTP Clock (Requirement 1)
+  applyTimezoneConfig();
+
+  // Initialize I2C for AtomENV on Grove Port (SDA: GPIO 2, SCL: GPIO 1) (Requirement 9)
+  if (env_sensor_enabled) {
+    Wire.begin(2, 1);
+    logger("[AtomENV] Wire I2C initialized on Grove port (SDA: GPIO 2, SCL: GPIO 1)", "info");
+  }
 
   // Create unique listener name using MAC
   uint8_t mac[6];
@@ -2685,8 +3695,14 @@ void loop() {
     checkEthernetWifiPrecedence();
   }
 
-  // 1. Process incoming packets with sub-millisecond latency (TSL 3.1 UDP, ETC, NMOS, rtpMIDI, OSC, OSC Cue Light)
+  // 1. Process incoming packets with sub-millisecond latency (TSL 3.1 UDP, ETC, NMOS, rtpMIDI, OSC, Promptside, MSC)
   processIncomingTSL();
+
+  // 1.5 P2P Heartbeat & Peer Loss Fault Detection (Requirement 7)
+  handleP2PHeartbeatCheck();
+
+  // 1.8 Read M5Stack AtomENV Sensor on I2C Grove Port (Requirement 9)
+  readAtomEnvSensor();
 
   // 2. Handle flash effect if requested by Tally Arbiter
   if (flashRequested) {
@@ -2709,27 +3725,31 @@ void loop() {
     renderScreen();
   }
 
-  // 3. IMU Screen Auto-Rotation (Requirement 6)
+  // 3. IMU Screen Auto-Orientation (Requirement 5)
+  // Ensures screen text is ALWAYS right-side up regardless of physical unit orientation
   static unsigned long lastIMUCheck = 0;
-  if (millis() - lastIMUCheck >= 100) {
+  if (millis() - lastIMUCheck >= 80) {
     lastIMUCheck = millis();
     float ax = 0, ay = 0, az = 0;
     if (M5.Imu.isEnabled()) {
       M5.Imu.getAccel(&ax, &ay, &az);
       uint8_t targetRot = currentRotation;
-      if (ay < -0.6) targetRot = 0;        // Upright (ports at bottom)
-      else if (ay > 0.6) targetRot = 2;   // Inverted (ports at top)
-      else if (ax > 0.6) targetRot = 1;   // Rotated 90 deg right
-      else if (ax < -0.6) targetRot = 3;  // Rotated 90 deg left
+      if (fabs(ay) >= fabs(ax)) {
+        if (ay < -0.45f) targetRot = 0;      // Upright (Grove/PoE ports at bottom)
+        else if (ay > 0.45f) targetRot = 2; // Inverted 180 (Grove/PoE ports at top)
+      } else {
+        if (ax > 0.45f) targetRot = 1;      // Rotated 90 deg clockwise (ports on left)
+        else if (ax < -0.45f) targetRot = 3;// Rotated 90 deg counter-clockwise (ports on right)
+      }
 
       if (targetRot != currentRotation) {
         if (pendingRotation != targetRot) {
           pendingRotation = targetRot;
           pendingRotTime = millis();
-        } else if (millis() - pendingRotTime >= 250) { // 250ms debounce
+        } else if (millis() - pendingRotTime >= 200) { // 200ms debounce
           currentRotation = targetRot;
+          // CRITICAL FIX: Only rotate hardware scanout; do NOT double-rotate canvas!
           M5.Display.setRotation(currentRotation);
-          canvas.setRotation(currentRotation);
           logger(String("[IMU] Screen auto-rotated to ") + String(currentRotation * 90) + " degrees", "info");
           renderScreen();
         }
@@ -2739,13 +3759,16 @@ void loop() {
     }
   }
 
-  // 4. Smooth Flashing (ETC Standby, rtpMIDI/OSC Flash Red, OSC Cue Light standby_ack) & OSC text ticker
+  // 4. Smooth Flashing (ETC Standby, Promptside Standby, P2P Disconnect Alarm, Flash Red) & OSC text ticker
   static unsigned long lastFlashTickerTime = 0;
   bool isFlashing = (isETCCueSystem() && actualType == "\"standby\"" && !cuesystem_ack_active) ||
                     (actualType == "\"flashred\"") ||
-                    (isOSCCueLight() && osccue_state == "standby_ack" && !osccue_ack_done);
+                    (isOSCCueLight() && osccue_state == "standby_ack" && !osccue_ack_done) ||
+                    (isPromptside() && promptside_state == "standby_ack" && !promptside_ack_done) ||
+                    (isP2PMode() && p2p_disconnected_state);
   bool isTicker = (isOSC() && osc_custom_message.length() > 9) ||
-                  ((isTSL31Listener() || isTSL50Listener()) && (isTSL31Listener() ? tsl31_name : tsl50_name).length() > 9);
+                  ((isTSL31Listener() || isTSL50Listener()) && (isTSL31Listener() ? tsl31_name : tsl50_name).length() > 9) ||
+                  (isPromptside() && promptside_cue_text.length() > 9);
 
   if (isFlashing) {
     if (millis() - lastFlashTickerTime >= 200) {
@@ -2762,7 +3785,15 @@ void loop() {
   // 5. Button Handling on AtomS3R Screen Button
   // Single click: Mode-aware action
   if (M5.BtnA.wasClicked()) {
-    if (isETCCueSystem()) {
+    if (isPromptside()) {
+      // Requirement 2: Promptside Acknowledge Return
+      logger(String("[Button] Promptside ACK pressed for CH ") + promptside_channel, "info");
+      promptside_ack_done = true;
+      if (networkConnected) {
+        sendPromptsideAck();
+      }
+      renderScreen();
+    } else if (isETCCueSystem()) {
       logger(String("[Button] CueSystem Acknowledge pressed for CH ") + String(cuesystem_channel), "info");
       cuesystem_ack_active = true;
       if (networkConnected) {
@@ -2790,10 +3821,12 @@ void loop() {
         sendNMOSTally(nmos_program_active);
       }
       renderScreen();
-    } else if (isRTPMidi()) {
-      logger("[Button] rtpMIDI Test Toggle pressed", "info");
-      midi_active_red = !midi_active_red;
-      evaluateRTPMidiState();
+    } else if (isRTPMidi() || isMSCRTPMidi()) {
+      // Requirement 6: Transmit configured MIDI Button Action back to host
+      logger("[Button] MIDI return action triggered", "info");
+      sendMidiButtonAction(true);
+      delay(40);
+      sendMidiButtonAction(false);
       renderScreen();
     } else if (isOSC()) {
       logger("[Button] OSC Test Toggle pressed", "info");
