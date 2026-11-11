@@ -55,6 +55,10 @@ export default function App() {
     staticGW: '192.168.1.1',
     staticDNS: '8.8.8.8',
     wifiDisabledForEth: false,
+    // Power & Thermal Management (Item 10)
+    cpuFrequency: 80,
+    screenDimTimeout: 60,
+    isScreenDimmed: false,
     // Timezone & Clock (Item 1)
     timezone: 'Europe/London',
     customTZPosix: 'GMT0BST,M3.5.0/1,M10.5.0',

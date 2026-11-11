@@ -14,7 +14,8 @@ import {
   Tv,
   Music,
   Volume2,
-  MessageSquare
+  MessageSquare,
+  Zap
 } from 'lucide-react';
 import { SimulatorState } from './AtomSimulator';
 
@@ -99,6 +100,10 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
   const [formTimezone, setFormTimezone] = useState(state.timezone);
   const [formCustomTZPosix, setFormCustomTZPosix] = useState(state.customTZPosix);
 
+  // Power & Thermal Management (Item 10)
+  const [formCpuFreq, setFormCpuFreq] = useState<80 | 160 | 240>(state.cpuFrequency || 80);
+  const [formDimTimeout, setFormDimTimeout] = useState<number>(state.screenDimTimeout ?? 60);
+
   // Global Features (Items 4 & 9)
   const [formMtcReader, setFormMtcReader] = useState(state.mtcReaderEnabled);
   const [formEnvSensor, setFormEnvSensor] = useState(state.envSensorEnabled);
@@ -134,6 +139,8 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
       staticMask: formStaticMask,
       staticGW: formStaticGW,
       staticDNS: formStaticDNS,
+      cpuFrequency: formCpuFreq,
+      screenDimTimeout: formDimTimeout,
       timezone: formTimezone,
       customTZPosix: formCustomTZPosix,
       mtcReaderEnabled: formMtcReader,
@@ -316,9 +323,10 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
               </div>
             </div>
 
-            <div className="mt-3 flex items-center justify-between text-xs text-neutral-400 pt-2 border-t border-neutral-700/50">
-              <span>Double Buffering: <strong className="text-purple-400">Enabled (32KB Canvas)</strong></span>
-              <span>Hardware: <strong className="text-neutral-200">ESP32-S3 + W5500 SPI + IMU</strong></span>
+            <div className="mt-3 flex flex-wrap items-center justify-between text-xs text-neutral-400 pt-2 border-t border-neutral-700/50 gap-2">
+              <span>PoE Thermal: <strong className={formCpuFreq === 80 ? 'text-emerald-400' : formCpuFreq === 160 ? 'text-amber-400' : 'text-red-400'}>{formCpuFreq} MHz ({formCpuFreq === 80 ? 'Eco ~35°C' : formCpuFreq === 160 ? 'Balanced ~45°C' : 'Max ~58°C'})</strong></span>
+              <span>Radios: <strong className="text-cyan-400">{state.wifiDisabledForEth ? 'OFF (PoE Precedence)' : 'Active'}</strong></span>
+              <span>Screen: <strong className="text-neutral-200">{state.isScreenDimmed ? 'Auto-Dimmed (10%)' : 'Active'}</strong></span>
             </div>
           </div>
 
@@ -550,6 +558,61 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
                       </div>
                     </label>
                   </div>
+                </div>
+              </div>
+
+              {/* Power & Thermal Management Section (Item 10) */}
+              <div className="p-4 bg-neutral-900/90 rounded-xl border border-neutral-700/80 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>Power &amp; Thermal Management (PoE Optimization)</span>
+                  </h3>
+                  <span className={`text-[10.5px] font-mono px-2 py-0.5 rounded border font-bold ${
+                    formCpuFreq === 80 ? 'bg-emerald-950 text-emerald-300 border-emerald-800' : 'bg-amber-950 text-amber-300 border-amber-800'
+                  }`}>
+                    {formCpuFreq === 80 ? 'Eco Mode (~35°C)' : formCpuFreq === 160 ? 'Balanced (~45°C)' : 'Max Clock (~58°C)'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                      CPU Frequency Clock
+                    </label>
+                    <select
+                      value={formCpuFreq}
+                      onChange={(e) => setFormCpuFreq(parseInt(e.target.value) as 80 | 160 | 240)}
+                      className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-cyan-500 cursor-pointer"
+                    >
+                      <option value={80}>80 MHz (Eco - 35°C, Coolest &amp; Recommended for PoE)</option>
+                      <option value={160}>160 MHz (Balanced - ~45°C)</option>
+                      <option value={240}>240 MHz (Max Performance - ~58°C Hot)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                      Display Auto-Dimming Timeout
+                    </label>
+                    <select
+                      value={formDimTimeout}
+                      onChange={(e) => setFormDimTimeout(parseInt(e.target.value))}
+                      className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-cyan-500 cursor-pointer"
+                    >
+                      <option value={0}>Disabled (Never Dim - Always set brightness)</option>
+                      <option value={30}>After 30s Inactive (Dim to 10%)</option>
+                      <option value={60}>After 60s Inactive (Recommended)</option>
+                      <option value={180}>After 3 Minutes Inactive</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="p-2.5 bg-neutral-950 rounded-lg border border-neutral-800/80 text-[11px] text-neutral-400 leading-relaxed">
+                  <strong className="text-cyan-300">PoE Thermal Safety Notice: </strong>
+                  The AtomPoE base steps down 48V PoE to 5V inside a compact 24×24×13mm sealed shell. 
+                  Setting the CPU to <strong>80 MHz</strong> reduces core dynamic power by ~60% while maintaining the APB bus at 80 MHz, preserving 100% full W5500 SPI line-rate speed and &lt;1ms tally latency. 
+                  Wi-Fi and Bluetooth radios are shut down when Ethernet is linked to eliminate redundant RF heating.
                 </div>
               </div>
 

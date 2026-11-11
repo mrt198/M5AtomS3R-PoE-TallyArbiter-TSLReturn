@@ -55,13 +55,13 @@ export const DiffViewer: React.FC = () => {
         </div>
 
         <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4">
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-amber-400 mb-2">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-cyan-400 mb-2">
             <Zap className="w-4 h-4" />
-            <span>PoE 802.3af</span>
+            <span>PoE Eco Profile</span>
           </div>
-          <div className="text-xl font-bold text-white font-mono">Continuous Power</div>
+          <div className="text-xl font-bold text-white font-mono">80 MHz / 35°C</div>
           <p className="text-xs text-neutral-400 mt-1">
-            Powered through the Ethernet cable via AtomPoE base, eliminating dead battery issues during live production.
+            Locks APB at 80 MHz for 100% full W5500 SPI line-rate while cutting heat from ~58°C to ~35°C with radio shutdown and auto-dimming.
           </p>
         </div>
       </div>

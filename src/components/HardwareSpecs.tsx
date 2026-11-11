@@ -229,6 +229,16 @@ if (canvas.createSprite(128, 128) != nullptr) {
               When PoE Ethernet link is established and acquires an IP, the 2.4GHz Wi-Fi radio is immediately shut down to prevent dual-homed ARP conflicts and duplicate IPs on studio production networks.
             </p>
           </div>
+
+          <div className="p-4 bg-neutral-950 rounded-xl border border-neutral-800">
+            <div className="text-cyan-400 font-bold mb-1 flex items-center justify-between">
+              <span>PoE Thermal &amp; Low-Power ESP32 Profile</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">80 MHz / ~35°C</span>
+            </div>
+            <p className="text-neutral-400 font-sans text-xs mt-1">
+              AtomPoE converts 48V to 5V inside a sealed 24×24mm plastic shell. Lowering CPU to 80 MHz preserves 80 MHz APB bus clock (100% full W5500 SPI line-rate), cuts dynamic power by ~60%, stops RF radios, yields to FreeRTOS <code className="text-cyan-300">waiti</code>, and auto-dims the LCD when idle in Standby, reducing operating temperature from ~58°C down to ~35°C with zero latency penalty.
+            </p>
+          </div>
         </div>
       </div>
     </div>

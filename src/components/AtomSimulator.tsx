@@ -46,6 +46,10 @@ export interface SimulatorState {
   staticGW: string;
   staticDNS: string;
   wifiDisabledForEth: boolean;
+  // Power & Thermal Management (Item 10)
+  cpuFrequency: 80 | 160 | 240;
+  screenDimTimeout: number; // 0 (Never), 30s, 60s, 180s
+  isScreenDimmed: boolean;
   // Timezone & Clock Configuration (Item 1)
   timezone: string;
   customTZPosix: string;
@@ -383,6 +387,9 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
   const handleButtonMouseDown = () => {
     setIsPressing(true);
     setPressStartTime(Date.now());
+    if (state.isScreenDimmed) {
+      setState(prev => ({ ...prev, isScreenDimmed: false }));
+    }
   };
 
   const handleButtonMouseUp = () => {
@@ -560,14 +567,22 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                   type="button"
                   onMouseDown={handleButtonMouseDown}
                   onMouseUp={handleButtonMouseUp}
-                  className={`w-40 h-40 rounded-lg overflow-hidden border-2 border-neutral-900 shadow-inner flex flex-col cursor-pointer transition-all duration-150 transform ${
+                  className={`w-40 h-40 rounded-lg overflow-hidden border-2 border-neutral-900 shadow-inner flex flex-col cursor-pointer transition-all duration-150 transform relative ${
                     isPressing ? 'scale-[0.97]' : 'scale-100 hover:scale-[1.01]'
                   } ${getScreenBgColor()}`}
                   style={{
-                    opacity: (brightnessPercents[state.brightnessLevel] / 100) * 0.4 + 0.6
+                    opacity: state.isScreenDimmed ? 0.32 : ((brightnessPercents[state.brightnessLevel] / 100) * 0.4 + 0.6),
+                    transition: 'opacity 0.25s ease'
                   }}
                   title="Click screen: Single=Action/Ack, Double=Screen, Hold=Brightness"
                 >
+                  {state.isScreenDimmed && (
+                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center pointer-events-none z-30">
+                      <span className="px-2 py-0.5 rounded bg-black/90 border border-amber-500/80 text-amber-300 text-[8.5px] font-bold tracking-wider font-mono shadow-lg animate-pulse">
+                        DIMMED [ECO 10%]
+                      </span>
+                    </div>
+                  )}
                   {state.currentScreen === 0 ? (
                     // Screen 0: Tally & Cue
                     <div className="w-full h-full p-2 flex flex-col justify-between text-left font-mono">
@@ -2197,9 +2212,113 @@ export const AtomSimulator: React.FC<AtomSimulatorProps> = ({
                 </select>
               </div>
             </div>
+
+            {/* 5. PoE Thermal & Low-Power Management Simulator (Item 10) */}
+            {(() => {
+              const cpuFreq = state.cpuFrequency || 80;
+              const estWatts = (
+                (cpuFreq === 80 ? 0.42 : cpuFreq === 160 ? 0.70 : 1.18) +
+                (state.wifiDisabledForEth ? 0 : 0.35) +
+                (state.isScreenDimmed ? 0 : 0.15)
+              );
+              const estTempC = 31.5 + (estWatts * 19.5);
+              const isCool = estTempC < 42;
+
+              return (
+                <div className="p-3.5 bg-neutral-950 rounded-xl border border-neutral-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-cyan-400 font-mono flex items-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5" />
+                      <span>PoE Thermal &amp; Low-Power Modes</span>
+                    </span>
+                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded border font-bold ${
+                      isCool ? 'bg-emerald-950 text-emerald-300 border-emerald-800' : 'bg-red-950 text-red-300 border-red-800'
+                    }`}>
+                      {estTempC.toFixed(1)}°C {isCool ? '(COOL)' : '(VERY WARM)'}
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] text-neutral-400 leading-snug">
+                    AtomPoE steps down 48V to 5V inside a sealed 24×24mm shell. Running at 80 MHz CPU preserves 80 MHz APB bus for 100% full W5500 SPI line-rate with &lt;1ms tally latency while slashing heat dissipation.
+                  </p>
+
+                  {/* CPU Frequency Selector */}
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between items-center text-[11px] font-mono">
+                      <span className="text-neutral-400">CPU CLOCK FREQUENCY:</span>
+                      <span className="font-bold text-white">{cpuFreq} MHz (APB: 80 MHz)</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {[
+                        { freq: 80 as const, label: '80 MHz', tag: 'Eco (~36°C)' },
+                        { freq: 160 as const, label: '160 MHz', tag: 'Mid (~45°C)' },
+                        { freq: 240 as const, label: '240 MHz', tag: 'Max (~58°C)' }
+                      ].map((item) => (
+                        <button
+                          key={item.freq}
+                          type="button"
+                          onClick={() => setState(prev => ({ ...prev, cpuFrequency: item.freq }))}
+                          className={`p-1.5 rounded-lg border text-center transition-all cursor-pointer ${
+                            cpuFreq === item.freq
+                              ? 'bg-cyan-950 text-cyan-300 border-cyan-500 font-bold'
+                              : 'bg-neutral-900 text-neutral-400 border-neutral-800 hover:border-neutral-700'
+                          }`}
+                        >
+                          <div className="text-[11px] font-mono">{item.label}</div>
+                          <div className="text-[9px] text-neutral-400">{item.tag}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Screen Dimming & Test */}
+                  <div className="space-y-1.5 pt-2 border-t border-neutral-800">
+                    <div className="flex justify-between items-center text-[11px] font-mono">
+                      <span className="text-neutral-400">AUTO-DIM TIMEOUT:</span>
+                      <div className="flex items-center gap-1.5">
+                        <select
+                          value={state.screenDimTimeout ?? 60}
+                          onChange={(e) => setState(prev => ({ ...prev, screenDimTimeout: parseInt(e.target.value) || 0 }))}
+                          className="bg-neutral-900 border border-neutral-700 rounded px-2 py-0.5 text-[10.5px] font-mono text-white"
+                        >
+                          <option value={0}>Disabled</option>
+                          <option value={30}>30s Idle</option>
+                          <option value={60}>60s Idle (Eco)</option>
+                          <option value={180}>3m Idle</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => setState(prev => ({ ...prev, isScreenDimmed: !prev.isScreenDimmed }))}
+                          className={`px-2 py-0.5 rounded text-[10px] font-mono border font-bold transition-colors cursor-pointer ${
+                            state.isScreenDimmed
+                              ? 'bg-amber-950 text-amber-300 border-amber-600'
+                              : 'bg-neutral-900 text-neutral-300 border-neutral-700 hover:border-amber-600'
+                          }`}
+                        >
+                          {state.isScreenDimmed ? 'WAKE DISPLAY' : 'TEST AUTO-DIM'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Telemetry Stats */}
+                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-neutral-800 text-[10.5px] font-mono">
+                    <div className="bg-neutral-900 p-2 rounded border border-neutral-800/80">
+                      <div className="text-neutral-500 text-[9px] uppercase">Est. Electrical Draw</div>
+                      <div className="text-white font-bold">{estWatts.toFixed(2)} W @ 5V</div>
+                    </div>
+                    <div className="bg-neutral-900 p-2 rounded border border-neutral-800/80">
+                      <div className="text-neutral-500 text-[9px] uppercase">Radio Transceivers</div>
+                      <div className="text-cyan-400 font-bold">{state.wifiDisabledForEth ? 'OFF (PoE Precedence)' : 'Wi-Fi Active'}</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
       </div>
     </div>
   );
 };
+
