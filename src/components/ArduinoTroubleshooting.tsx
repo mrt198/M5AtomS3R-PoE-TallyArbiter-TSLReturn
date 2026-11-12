@@ -384,16 +384,36 @@ mbedtls_md5_finish(&_ctx, (unsigned char *)_buf);`}
             </div>
           </div>
 
-          <div className="p-4 bg-neutral-950 rounded-xl border border-neutral-800 space-y-2">
-            <span className="text-red-400 font-bold block flex items-center justify-between">
-              <span>2. Incompatible types in assignment to char[]</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-950 text-red-300 border border-red-800">Type Safety</span>
+          <div className="p-4 bg-neutral-950 rounded-xl border border-neutral-800 space-y-2 md:col-span-2">
+            <span className="text-amber-400 font-bold block flex items-center justify-between">
+              <span>3. Periodic Reboot Every Few Minutes (<code className="text-amber-300">rst:0xc RTC_SW_CPU_RST</code>)</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">Fixed</span>
             </span>
             <p className="text-neutral-300 font-sans text-xs leading-relaxed">
-              <strong>Cause:</strong> Network IP variables, topics, and host strings were declared as fixed <code className="text-red-300 font-mono">char[]</code> arrays, causing errors when assigning <code className="text-neutral-200 font-mono">String</code> values from web requests and <code className="text-neutral-200 font-mono">Preferences</code>, or assigning port numbers to char buffers.
+              <strong>Cause:</strong> In <code className="text-neutral-200">MycilaESPConnect</code>, the captive portal has a default timeout of 180 seconds and defaults to <code className="text-red-300 font-mono">autoRestart = true</code>. When the 180s timer elapsed, the state machine transitioned from <code className="text-neutral-200 font-mono">PORTAL_STARTED (10)</code> to <code className="text-neutral-200 font-mono">PORTAL_TIMEOUT (12)</code> and executed <code className="text-red-300 font-mono">ESP.restart()</code>.
             </p>
-            <div className="p-2.5 bg-neutral-900 rounded border border-neutral-800 text-[11px] text-emerald-300">
-              ✓ Declared as <code className="text-cyan-300">String static_ip</code>, <code className="text-cyan-300">String cuesystem_host</code>, and <code className="text-cyan-300">int cuesystem_port</code>.
+            <div className="p-2.5 bg-neutral-900 rounded border border-neutral-800 text-[11px] text-emerald-300 space-y-1">
+              <div>✓ Configured <code className="text-cyan-300">espConnect.setAutoRestart(false)</code> in <code className="text-neutral-200 font-mono">setup()</code> to prohibit automatic reboots.</div>
+              <div>✓ Used <code className="text-cyan-300">WiFi.enableAP(false)</code> to disable the Wi-Fi AP gracefully without deinitializing the LwIP network interface.</div>
+            </div>
+          </div>
+
+          <div className="p-4 bg-neutral-950 rounded-xl border border-neutral-800 space-y-2 md:col-span-2">
+            <span className="text-cyan-400 font-bold block flex items-center justify-between">
+              <span>4. Tally Arbiter Socket.IO Connection &amp; Settings Save Network Drop</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">Fixed</span>
+            </span>
+            <p className="text-neutral-300 font-sans text-xs leading-relaxed">
+              <strong>Cause 1 (Tally Arbiter):</strong> Calling <code className="text-red-300 font-mono">esp_wifi_stop()</code> and <code className="text-red-300 font-mono">espConnect.end()</code> destroyed the shared LwIP <code className="text-neutral-200 font-mono">esp-netif</code> mappings used by <code className="text-neutral-200 font-mono">WiFiClient</code>, preventing <code className="text-neutral-200 font-mono">SocketIOclient</code> from opening TCP connections to Tally Arbiter over Ethernet.
+            </p>
+            <p className="text-neutral-300 font-sans text-xs leading-relaxed">
+              <strong>Cause 2 (Network Drop on Save):</strong> The settings POST handler called <code className="text-red-300 font-mono">ETH.config(0,0,0,0)</code> unconditionally on every save, terminating the active DHCP lease while serving the HTTP response. In addition, dynamic CPU frequency switching disrupted the SPI clock to the W5500.
+            </p>
+            <div className="p-2.5 bg-neutral-900 rounded border border-neutral-800 text-[11px] text-emerald-300 space-y-1">
+              <div>✓ Replaced destructive Wi-Fi teardown with safe <code className="text-cyan-300 font-mono">WiFi.enableAP(false)</code>; all Socket.IO and TCP traffic routes cleanly over Ethernet.</div>
+              <div>✓ Added change-detection to <code className="text-cyan-300 font-mono">applyNetworkIPConfig()</code>: unchanged DHCP leases are preserved so the PoE network never drops.</div>
+              <div>✓ Sent HTTP 200 response immediately before applying configurations, and restricted CPU frequency changes to when the clock frequency actually differs.</div>
+              <div>✓ Added a 3-second keep-alive watchdog in <code className="text-neutral-200 font-mono">loop()</code> to maintain continuous connection to Tally Arbiter.</div>
             </div>
           </div>
         </div>

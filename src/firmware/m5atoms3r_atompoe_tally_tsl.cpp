@@ -367,7 +367,7 @@ void renderScreen();
 void updateBrightness();
 void connectToServer();
 void disconnectFromServer();
-void applyNetworkIPConfig();
+void applyNetworkIPConfig(bool force = false);
 void socket_event(socketIOmessageType_t type, uint8_t *payload, size_t length);
 void socket_Connected(const char *payload, size_t length);
 void socket_Flash();
@@ -439,8 +439,18 @@ bool usesTallyArbiter() {
 // ==========================================
 // Network Helper Utilities & IP Configuration
 // ==========================================
-void applyNetworkIPConfig() {
+static bool currentConfiguredDHCP = true;
+static String currentConfiguredIP = "";
+static String currentConfiguredMask = "";
+static String currentConfiguredGW = "";
+static String currentConfiguredDNS = "";
+
+void applyNetworkIPConfig(bool force) {
   if (!useDHCP && static_ip.length() > 0 && static_mask.length() > 0 && static_gw.length() > 0) {
+    if (!force && !currentConfiguredDHCP && static_ip == currentConfiguredIP && static_mask == currentConfiguredMask && static_gw == currentConfiguredGW && static_dns == currentConfiguredDNS) {
+      // Configuration has not changed; do nothing to avoid dropping network connection
+      return;
+    }
     IPAddress ip, mask, gw, dns;
     if (ip.fromString(static_ip) && mask.fromString(static_mask) && gw.fromString(static_gw)) {
       if (!dns.fromString(static_dns)) {
@@ -449,11 +459,22 @@ void applyNetworkIPConfig() {
       logger(String("[Network] Applying Static IP Configuration: ") + static_ip + ", Mask: " + static_mask + ", GW: " + static_gw + ", DNS: " + static_dns, "info");
       ETH.config(ip, gw, mask, dns);
       WiFi.config(ip, gw, mask, dns);
+      currentConfiguredDHCP = false;
+      currentConfiguredIP = static_ip;
+      currentConfiguredMask = static_mask;
+      currentConfiguredGW = static_gw;
+      currentConfiguredDNS = static_dns;
       return;
     }
   }
+
+  // DHCP mode: if already running on DHCP and Ethernet has an active lease, DO NOT clear IP or renew needlessly!
+  if (!force && currentConfiguredDHCP && isEthernetActive()) {
+    return;
+  }
   logger("[Network] Configuring DHCP (Automatic IP Assignment)", "info");
   ETH.config(IPAddress(0, 0, 0, 0), IPAddress(0, 0, 0, 0), IPAddress(0, 0, 0, 0));
+  currentConfiguredDHCP = true;
 }
 
 bool isEthernetActive() {
@@ -667,25 +688,23 @@ String getNetworkIPStr() {
   return "0.0.0.0";
 }
 
-// Requirement 4 & 10: Disable Wi-Fi and Bluetooth when PoE Ethernet is connected
-// Eliminates multiple IP addresses and stops RF transceivers, reducing heat dissipation in PoE base
+// Requirement 4 & 10: Disable Wi-Fi AP when PoE Ethernet is connected
+// Eliminates multiple IP addresses and prevents AP broadcasting while preserving LwIP socket routing for Tally Arbiter
 void checkEthernetWifiPrecedence() {
   if (isEthernetActive()) {
     if (!wifiDisabledForEth) {
       wifiDisabledForEth = true;
-      logger("[Network] PoE Ethernet active (" + ETH.localIP().toString() + "). Disabling Wi-Fi & Bluetooth to eliminate multi-IP and reduce PoE heat.", "info");
-      WiFi.disconnect(true);
-      WiFi.mode(WIFI_OFF);
-      esp_wifi_stop();
-      btStop();
-      esp_bt_controller_disable();
+      logger("[Network] PoE Ethernet active (" + ETH.localIP().toString() + "). Disabling Wi-Fi AP to eliminate multi-IP and reduce radio load.", "info");
+      WiFi.disconnect(false);
+      WiFi.enableAP(false);
     }
   } else {
     if (wifiDisabledForEth) {
       wifiDisabledForEth = false;
       logger("[Network] PoE Ethernet disconnected. Re-enabling Wi-Fi fallback.", "info");
-      esp_wifi_start();
-      WiFi.mode(WIFI_STA);
+      WiFi.enableAP(true);
+      espConnect.setAutoRestart(false);
+      espConnect.setBlocking(false);
       espConnect.begin(listenerDeviceName.c_str(), listenerDeviceName.c_str());
     }
   }
@@ -2294,14 +2313,16 @@ void applyPowerManagementConfig() {
   if (cpu_freq_mhz != 80 && cpu_freq_mhz != 160 && cpu_freq_mhz != 240) {
     cpu_freq_mhz = 80;
   }
-  setCpuFrequencyMhz(cpu_freq_mhz);
+  if (getCpuFrequencyMhz() != (uint32_t)cpu_freq_mhz) {
+    setCpuFrequencyMhz(cpu_freq_mhz);
+    logger(String("[Power] CPU Frequency adjusted to ") + String(cpu_freq_mhz) + " MHz", "info");
+  }
 
   // Power down Bluetooth radio completely (not utilized by tally/cue light)
   btStop();
-  esp_bt_controller_disable();
 
   logger(String("[Power] Low-Power Mode Applied: CPU @ ") + String(getCpuFrequencyMhz()) + 
-         " MHz (APB: " + String(getApbFrequency() / 1000000) + " MHz). BT radio OFF.", "info");
+         " MHz (APB: " + String(getApbFrequency() / 1000000) + " MHz). BT radio OFF.", "info-quiet");
 }
 
 void updateBrightness() {
@@ -3468,8 +3489,16 @@ void setupWebServer() {
     preferences.putInt("dimTimeout", screen_dim_timeout_sec);
     preferences.end();
 
-    // Reapply IP, Timezone & Power Management configurations immediately
-    applyNetworkIPConfig();
+    // 1. Send HTTP 200 response FIRST so browser connection finishes cleanly without reset
+    request->send(200, "text/html", "<html><body style='background:#0f172a;color:#f1f5f9;font-family:sans-serif;padding:30px;'>"
+                                    "<h2>Configuration Saved!</h2>"
+                                    "<p>Mode: <strong>" + operatingMode + "</strong></p>"
+                                    "<p>IP Mode: <strong>" + (useDHCP ? String("DHCP (Automatic)") : (String("Static IP: ") + static_ip)) + "</strong></p>"
+                                    "<p>Group: <strong>" + pairingGroup + "</strong></p>"
+                                    "<a href='/' style='color:#38bdf8;text-decoration:none;font-weight:600;'>Return to Dashboard</a></body></html>");
+
+    // 2. Reapply IP, Timezone & Power Management configurations safely (no drop if unchanged)
+    applyNetworkIPConfig(false);
     applyTimezoneConfig();
     applyPowerManagementConfig();
 
@@ -3512,13 +3541,6 @@ void setupWebServer() {
     } else {
       disconnectFromServer();
     }
-
-    request->send(200, "text/html", "<html><body style='background:#0f172a;color:#f1f5f9;font-family:sans-serif;padding:30px;'>"
-                                    "<h2>Configuration Saved!</h2>"
-                                    "<p>Mode: <strong>" + operatingMode + "</strong></p>"
-                                    "<p>IP Mode: <strong>" + (useDHCP ? String("DHCP (Automatic)") : (String("Static IP: ") + static_ip)) + "</strong></p>"
-                                    "<p>Group: <strong>" + pairingGroup + "</strong></p>"
-                                    "<a href='/' style='color:#38bdf8;text-decoration:none;font-weight:600;'>Return to Dashboard</a></body></html>");
 
     renderScreen();
   });
@@ -3682,6 +3704,7 @@ void setup() {
       case ARDUINO_EVENT_ETH_GOT_IP:
         logger(String("[ETH] IP Assigned (") + (useDHCP ? "DHCP" : "Static") + "): " + ETH.localIP().toString(), "info");
         networkConnected = true;
+        checkEthernetWifiPrecedence();
         {
           uint16_t listenPort = atoi(tallyarbiter_TSLport);
           if (isETCCueSystem()) listenPort = cuesystem_port;
@@ -3731,6 +3754,8 @@ void setup() {
   }
 
   // 3. Setup MycilaESPConnect Network Manager
+  espConnect.setAutoRestart(false);
+  espConnect.setBlocking(false);
   espConnect.listen([](Mycila::ESPConnect::State previous, Mycila::ESPConnect::State current) {
     logger(String("[Network] State: ") + String((int)previous) + " -> " + String((int)current), "info");
     if (current == Mycila::ESPConnect::State::NETWORK_CONNECTED) {
@@ -3757,6 +3782,8 @@ void setup() {
         disconnectFromServer();
         renderScreen();
       }
+    } else if (current == Mycila::ESPConnect::State::PORTAL_TIMEOUT) {
+      logger("[Network] Portal timeout reached; auto-restart prevented. Continuing normal operation.", "info");
     }
   });
 
@@ -3764,9 +3791,18 @@ void setup() {
   setupWebServer();
 
   // 5. Initialize network manager (non-blocking, hostname & AP SSID)
-  logger("[Network] Initializing MycilaESPConnect...", "info");
+  // Ensure auto-restart is disabled so captive portal timeout never restarts the MCU
+  espConnect.setAutoRestart(false);
   espConnect.setBlocking(false);
-  espConnect.begin(listenerDeviceName.c_str(), listenerDeviceName.c_str());
+  if (isEthernetActive()) {
+    logger("[Network] PoE Ethernet link active on boot. Wi-Fi AP disabled to ensure single deterministic IP.", "info");
+    wifiDisabledForEth = true;
+    WiFi.disconnect(false);
+    WiFi.enableAP(false);
+  } else {
+    logger("[Network] Initializing MycilaESPConnect...", "info");
+    espConnect.begin(listenerDeviceName.c_str(), listenerDeviceName.c_str());
+  }
 
   // Initialize NTP Time
   configTzTime(posix_time_zone_info, daylightOffset_sec, ntpServer1, ntpServer2);
@@ -3812,11 +3848,21 @@ void loop() {
   espConnect.loop();
   ArduinoOTA.handle();
 
-  // 0. Ethernet Precedence: Disable Wi-Fi when PoE Ethernet is active (Requirement 4)
+  // 0. Ethernet Precedence: Keep Wi-Fi AP disabled when PoE Ethernet is active
   static unsigned long lastEthPrecedenceCheck = 0;
-  if (millis() - lastEthPrecedenceCheck >= 500) {
+  if (millis() - lastEthPrecedenceCheck >= 1000) {
     lastEthPrecedenceCheck = millis();
     checkEthernetWifiPrecedence();
+  }
+
+  // 0.2 Tally Arbiter Auto-Connect / Keep-Alive Watchdog
+  static unsigned long lastTAConnectCheck = 0;
+  if (usesTallyArbiter() && networkConnected && !socket.isConnected()) {
+    if (millis() - lastTAConnectCheck >= 3000) {
+      lastTAConnectCheck = millis();
+      logger("[TallyArbiter] Ensuring connection to server...", "info");
+      connectToServer();
+    }
   }
 
   // 0.5 Power & Thermal Management: Auto-dim display when idle in Standby / Off
@@ -4085,6 +4131,9 @@ void ws_emit(String event, const char *payload) {
 void connectToServer() {
   if (!networkConnected) {
     logger("[TallyArbiter] Network not connected; deferring connectToServer()", "info");
+    return;
+  }
+  if (socket.isConnected()) {
     return;
   }
   logger(String("[TallyArbiter] Connecting to ") + tallyarbiter_host + ":" + tallyarbiter_port, "info");

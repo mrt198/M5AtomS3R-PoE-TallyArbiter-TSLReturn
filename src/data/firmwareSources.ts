@@ -342,21 +342,24 @@ udpTSL.begin(tsl_port);`,
 ETH.begin(...);
 WiFi.begin(...);
 // Both interfaces active simultaneously with distinct IP addresses`,
-    adapted: `// AtomS3R: Dynamic PoE Precedence & Wi-Fi Power Down
+    adapted: `// AtomS3R: Dynamic PoE Precedence & Safe Wi-Fi Radio Management
 void checkEthernetWifiPrecedence() {
   if (ETH.linkUp() && ETH.localIP() != IPAddress(0,0,0,0)) {
-    if (WiFi.getMode() != WIFI_OFF) {
-      WiFi.disconnect(true);
-      WiFi.mode(WIFI_OFF); // Power down 2.4GHz RF radio
+    if (!wifiDisabledForEth) {
+      wifiDisabledForEth = true;
+      WiFi.disconnect(false); // Disconnect STA without destroying netif
+      WiFi.enableAP(false);    // Turn off Access Point to eliminate secondary IP
     }
   } else if (!ETH.linkUp()) {
-    if (WiFi.getMode() == WIFI_OFF) {
-      WiFi.mode(WIFI_STA); // Fall back to wireless
-      WiFi.begin();
+    if (wifiDisabledForEth) {
+      wifiDisabledForEth = false;
+      WiFi.enableAP(true);
+      espConnect.setAutoRestart(false);
+      espConnect.begin(listenerDeviceName.c_str(), listenerDeviceName.c_str());
     }
   }
 }`,
-    explanation: 'When AtomPoE W5500 SPI link is connected and receives an IP, the 2.4GHz Wi-Fi radio is cleanly shut down. This eliminates dual-homed ARP conflicts, reduces RF noise, and ensures the unit has exactly one deterministic IP on the studio subnet.'
+    explanation: 'When AtomPoE W5500 SPI link is connected and receives an IP, the Wi-Fi AP is disabled to eliminate duplicate IP addresses and prevent RF collisions, while keeping the LwIP network interface intact so Socket.IO and TCP clients (Tally Arbiter) route cleanly over Ethernet.'
   },
   {
     category: 'TSL 5.0 Dedicated Listener (UDP / TCP)',
