@@ -2375,15 +2375,14 @@ void setupWebServer() {
     html += wifiDisabledForEth ? "<span class='badge badge-blue'>OFF (PoE Link)</span>" : "<span class='badge badge-purple'>Wi-Fi Active</span>";
     html += F("</strong> | Display: <strong>");
     html += screen_dimmed ? "Auto-Dimmed (10%)" : "Active";
-    html += F("</strong></p>");
-
-            "<p style='margin:8px 0 0 0;'><a href='/manual' target='_blank' style='color:#38bdf8;text-decoration:none;font-weight:600;font-size:13px;'>&#128214; View Full HTML User Manual & Documentation &rarr;</a></p>"
-            "</div><div class='card'>"
-                    "<form action='/save' method='POST'>"
-                    "<h2>Operating Mode & Role</h2>"
-                    "<label>Device Mode</label>"
-                    "<select name='mode' id='mode-select' onchange='updateModeUI()'>"
-                    "<option value='TP'");
+    html += F("</strong></p>"
+              "<p style='margin:8px 0 0 0;'><a href='/manual' target='_blank' style='color:#38bdf8;text-decoration:none;font-weight:600;font-size:13px;'>&#128214; View Full HTML User Manual & Documentation &rarr;</a></p>"
+              "</div><div class='card'>"
+              "<form action='/save' method='POST'>"
+              "<h2>Operating Mode & Role</h2>"
+              "<label>Device Mode</label>"
+              "<select name='mode' id='mode-select' onchange='updateModeUI()'>"
+              "<option value='TP'");
     if (operatingMode == "TP") html += F(" selected");
     html += F(">TP (Technical Producer with Tally Arbiter)</option>"
               "<option value='Presenter'");
@@ -2542,8 +2541,7 @@ void setupWebServer() {
     html += F(">After 3 Minutes Idle</option>"
               "</select></div></div>"
               "<div class='hint'>AtomPoE converts 48V PoE to 5V inside a sealed 24x24mm shell. Setting CPU to 80 MHz reduces core dynamic power by ~60% while maintaining the APB bus at 80 MHz (100% full W5500 SPI line-rate with &lt;1ms tally latency). Wi-Fi and Bluetooth radios are shut down when Ethernet is linked. Display auto-dims to 10% when idle and wakes instantly upon any live tally cue or button press.</div>"
-              "</div>");
-
+              "</div>"
 
               // Section: Tally Arbiter (Item 3: Configurable TSL Port)
               "<div id='sec-ta' class='section-box'>"
@@ -3823,7 +3821,7 @@ void loop() {
 
   // 0.5 Power & Thermal Management: Auto-dim display when idle in Standby / Off
   if (screen_dim_timeout_sec > 0) {
-    bool isLiveOnAir = (actualType == "\"program\"" || actualType == "\"preview\"" || cuesystem_ack_active || promptside_state == "go" || mscState == "go" || midi_active_red || tsl31_red || tsl50_red || osccue_state == "go");
+    bool isLiveOnAir = (actualType == "\"program\"" || actualType == "\"preview\"" || cuesystem_ack_active || promptside_state == "go" || msc_state == "go" || midi_active_red || osccue_state == "go");
     if (isLiveOnAir) {
       last_user_or_tally_act = millis();
       if (screen_dimmed) {
