@@ -1,0 +1,1456 @@
+[Network] PoE Ethernet active (10.32.16.94). Disabling Wi-Fi AP to eliminate multi-IP and reduce radio load.
+[TallyArbiter] Connecting to 10.32.3.2:4455
+[Time] Timezone applied: Europe/London (GMT0BST,M3.5.0/1,M10.5.0)
+[  4191][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[TallyArbiter] Ensuring connection to server...
+[TallyArbiter] Connecting to 10.32.3.2:4455
+[Time] Timezone applied: Europe/London (GMT0BST,M3.5.0/1,M10.5.0)
+[TallyArbiter] Connected successfully.
+[  6614][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (11168) wifi:sta is connecting, return error
+[  6626][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (11179) wifi:sta is connecting, return error
+[  9039][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (13594) wifi:sta is connecting, return error
+[  9051][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (13605) wifi:sta is connecting, return error
+[ 11465][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (16019) wifi:sta is connecting, return error
+[ 11476][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (16030) wifi:sta is connecting, return error
+[ 13890][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (18445) wifi:sta is connecting, return error
+[ 13902][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (18456) wifi:sta is connecting, return error
+[ 16316][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (20870) wifi:sta is connecting, return error
+[ 16328][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (20881) wifi:sta is connecting, return error
+[ 18741][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (23296) wifi:sta is connecting, return error
+[ 18753][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (23307) wifi:sta is connecting, return error
+[ 21069][W][MycilaESPConnect_Lifecycle.cpp:126] loop(): [ESPCONNECT] Connection timeout and WiFi is still active: forcing disconnect...
+[ 21086][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[Network] State: 2 -> 3
+[Network] State: 3 -> 9
+[Network] State: 9 -> 10
+[Power] Inactive for 60s in standby/off. Backlight auto-dimmed to 10% to minimize PoE heating.
+[Network] State: 10 -> 12
+[Network] Portal timeout reached; auto-restart prevented. Continuing normal operation.
+[201156][W][MycilaESPConnect_Lifecycle.cpp:184] loop(): [ESPCONNECT] Portal timeout!
+[Network] State: 12 -> 1
+[Network] State: 1 -> 2
+[203625][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (208180) wifi:sta is connecting, return error
+[203637][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (208191) wifi:sta is connecting, return error
+[206051][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (210606) wifi:sta is connecting, return error
+[206063][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (210617) wifi:sta is connecting, return error
+[208477][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (213031) wifi:sta is connecting, return error
+[208489][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (213042) wifi:sta is connecting, return error
+[210902][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (215457) wifi:sta is connecting, return error
+[210914][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (215468) wifi:sta is connecting, return error
+[213328][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (217882) wifi:sta is connecting, return error
+[213340][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (217893) wifi:sta is connecting, return error
+[215754][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (220308) wifi:sta is connecting, return error
+[215765][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (220319) wifi:sta is connecting, return error
+[218180][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (222734) wifi:sta is connecting, return error
+[218191][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (222745) wifi:sta is connecting, return error
+[220605][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (225159) wifi:sta is connecting, return error
+[220617][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (225171) wifi:sta is connecting, return error
+[221211][W][MycilaESPConnect_Lifecycle.cpp:126] loop(): [ESPCONNECT] Connection timeout and WiFi is still active: forcing disconnect...
+[221228][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[Network] State: 2 -> 3
+[Network] State: 3 -> 9
+[Network] State: 9 -> 10
+[Network] State: 10 -> 12
+[Network] Portal timeout reached; auto-restart prevented. Continuing normal operation.
+[401280][W][MycilaESPConnect_Lifecycle.cpp:184] loop(): [ESPCONNECT] Portal timeout!
+[Network] State: 12 -> 1
+[Network] State: 1 -> 2
+[403750][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (408305) wifi:sta is connecting, return error
+[403762][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (408316) wifi:sta is connecting, return error
+[406176][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (410730) wifi:sta is connecting, return error
+[406188][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (410742) wifi:sta is connecting, return error
+[408602][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (413156) wifi:sta is connecting, return error
+[408614][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (413167) wifi:sta is connecting, return error
+[411027][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (415582) wifi:sta is connecting, return error
+[411039][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (415593) wifi:sta is connecting, return error
+[413453][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (418007) wifi:sta is connecting, return error
+[413464][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (418018) wifi:sta is connecting, return error
+[415879][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (420433) wifi:sta is connecting, return error
+[415890][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (420444) wifi:sta is connecting, return error
+[418304][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (422858) wifi:sta is connecting, return error
+[418316][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (422869) wifi:sta is connecting, return error
+[420729][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (425284) wifi:sta is connecting, return error
+[420741][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (425295) wifi:sta is connecting, return error
+[421335][W][MycilaESPConnect_Lifecycle.cpp:126] loop(): [ESPCONNECT] Connection timeout and WiFi is still active: forcing disconnect...
+[421351][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[Network] State: 2 -> 3
+[Network] State: 3 -> 9
+[Network] State: 9 -> 10
+[Network] State: 10 -> 12
+[Network] Portal timeout reached; auto-restart prevented. Continuing normal operation.
+[601417][W][MycilaESPConnect_Lifecycle.cpp:184] loop(): [ESPCONNECT] Portal timeout!
+[Network] State: 12 -> 1
+[Network] State: 1 -> 2
+[603887][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (608441) wifi:sta is connecting, return error
+[603899][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (608452) wifi:sta is connecting, return error
+[606312][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (610867) wifi:sta is connecting, return error
+[606324][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (610878) wifi:sta is connecting, return error
+[608738][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (613292) wifi:sta is connecting, return error
+[608750][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (613303) wifi:sta is connecting, return error
+[611163][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (615718) wifi:sta is connecting, return error
+[611175][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (615729) wifi:sta is connecting, return error
+[613589][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (618143) wifi:sta is connecting, return error
+[613601][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (618154) wifi:sta is connecting, return error
+[616014][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (620569) wifi:sta is connecting, return error
+[616026][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (620580) wifi:sta is connecting, return error
+[618440][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (622995) wifi:sta is connecting, return error
+[618452][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (623006) wifi:sta is connecting, return error
+[620866][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (625420) wifi:sta is connecting, return error
+[620878][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (625432) wifi:sta is connecting, return error
+[621471][W][MycilaESPConnect_Lifecycle.cpp:126] loop(): [ESPCONNECT] Connection timeout and WiFi is still active: forcing disconnect...
+[621488][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[Network] State: 2 -> 3
+[Network] State: 3 -> 9
+[Network] State: 9 -> 10
+[Network] State: 10 -> 12
+[Network] Portal timeout reached; auto-restart prevented. Continuing normal operation.
+[801538][W][MycilaESPConnect_Lifecycle.cpp:184] loop(): [ESPCONNECT] Portal timeout!
+[Network] State: 12 -> 1
+[Network] State: 1 -> 2
+[804005][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (808559) wifi:sta is connecting, return error
+[804017][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (808570) wifi:sta is connecting, return error
+[806431][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (810985) wifi:sta is connecting, return error
+[806442][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (810996) wifi:sta is connecting, return error
+[808856][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (813410) wifi:sta is connecting, return error
+[808868][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (813422) wifi:sta is connecting, return error
+[811282][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (815836) wifi:sta is connecting, return error
+[811294][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (815847) wifi:sta is connecting, return error
+[813707][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (818261) wifi:sta is connecting, return error
+[813719][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (818272) wifi:sta is connecting, return error
+[816133][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (820687) wifi:sta is connecting, return error
+[816145][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (820698) wifi:sta is connecting, return error
+[818558][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (823112) wifi:sta is connecting, return error
+[818570][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (823124) wifi:sta is connecting, return error
+[820984][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (825538) wifi:sta is connecting, return error
+[820996][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (825549) wifi:sta is connecting, return error
+[821591][W][MycilaESPConnect_Lifecycle.cpp:126] loop(): [ESPCONNECT] Connection timeout and WiFi is still active: forcing disconnect...
+[821608][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[Network] State: 2 -> 3
+[Network] State: 3 -> 9
+[Network] State: 9 -> 10
+[Network] State: 10 -> 12
+[Network] Portal timeout reached; auto-restart prevented. Continuing normal operation.
+[1001659][W][MycilaESPConnect_Lifecycle.cpp:184] loop(): [ESPCONNECT] Portal timeout!
+[Network] State: 12 -> 1
+[Network] State: 1 -> 2
+[1004128][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1008682) wifi:sta is connecting, return error
+[1004139][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1008693) wifi:sta is connecting, return error
+[1006553][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1011108) wifi:sta is connecting, return error
+[1006565][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1011119) wifi:sta is connecting, return error
+[1008979][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1013533) wifi:sta is connecting, return error
+[1008991][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1013545) wifi:sta is connecting, return error
+[1011404][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1015959) wifi:sta is connecting, return error
+[1011416][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1015970) wifi:sta is connecting, return error
+[1013830][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1018385) wifi:sta is connecting, return error
+[1013842][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1018396) wifi:sta is connecting, return error
+[1016256][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1020811) wifi:sta is connecting, return error
+[1016268][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1020822) wifi:sta is connecting, return error
+[1018682][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1023237) wifi:sta is connecting, return error
+[1018694][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1023248) wifi:sta is connecting, return error
+[1021108][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1025663) wifi:sta is connecting, return error
+[1021120][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1025674) wifi:sta is connecting, return error
+[1021713][W][MycilaESPConnect_Lifecycle.cpp:126] loop(): [ESPCONNECT] Connection timeout and WiFi is still active: forcing disconnect...
+[1021728][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[Network] State: 2 -> 3
+[Network] State: 3 -> 9
+[Network] State: 9 -> 10
+[Network] State: 10 -> 12
+[Network] Portal timeout reached; auto-restart prevented. Continuing normal operation.
+[1201784][W][MycilaESPConnect_Lifecycle.cpp:184] loop(): [ESPCONNECT] Portal timeout!
+[Network] State: 12 -> 1
+[Network] State: 1 -> 2
+[1204251][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1208805) wifi:sta is connecting, return error
+[1204263][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1208817) wifi:sta is connecting, return error
+[1206676][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1211231) wifi:sta is connecting, return error
+[1206688][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1211242) wifi:sta is connecting, return error
+[1209102][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1213656) wifi:sta is connecting, return error
+[1209114][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1213668) wifi:sta is connecting, return error
+[1211528][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1216082) wifi:sta is connecting, return error
+[1211540][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1216094) wifi:sta is connecting, return error
+[1213954][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1218508) wifi:sta is connecting, return error
+[1213966][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1218519) wifi:sta is connecting, return error
+[1216380][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1220934) wifi:sta is connecting, return error
+[1216391][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1220945) wifi:sta is connecting, return error
+[1218805][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1223360) wifi:sta is connecting, return error
+[1218817][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1223371) wifi:sta is connecting, return error
+[1221231][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1225786) wifi:sta is connecting, return error
+[1221243][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1225797) wifi:sta is connecting, return error
+[1221837][W][MycilaESPConnect_Lifecycle.cpp:126] loop(): [ESPCONNECT] Connection timeout and WiFi is still active: forcing disconnect...
+[1221855][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[Network] State: 2 -> 3
+[Network] State: 3 -> 9
+Guru Meditation Error: Core  0 panic'ed (LoadProhibited). Exception was unhandled.
+
+Core  0 register dump:
+PC      : 0x4211c4ce  PS      : 0x00060230  A0      : 0x820ac7fc  A1      : 0x3fcb7b80  
+A2      : 0x00000000  A3      : 0x00000000  A4      : 0x00060220  A5      : 0x00060223  
+A6      : 0x00000001  A7      : 0x3fc98fc0  A8      : 0x00000000  A9      : 0x00000114  
+A10     : 0x00060223  A11     : 0x00000000  A12     : 0x00060220  A13     : 0x00060223  
+A14     : 0x3fcc1ea0  A15     : 0x0000cdcd  SAR     : 0x0000001f  EXCCAUSE: 0x0000001c  
+EXCVADDR: 0x000001a3  LBEG    : 0x400570e8  LEND    : 0x400570f3  LCOUNT  : 0x00000000  
+
+
+Backtrace: 0x4211c4cb:0x3fcb7b80 0x420ac7f9:0x3fcb7ba0 0x420aca20:0x3fcb7be0 0x4206ed19:0x3fcb7c00 0x420acb9d:0x3fcb7c20 0x420ac0c4:0x3fcb7c60 0x420ac31d:0x3fcb7ca0 0x4037f415:0x3fcb7cd0
+
+
+
+
+ELF file SHA256: 5708db30c
+
+Rebooting...
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0xc (RTC_SW_CPU_RST),boot:0x18 (SPI_FAST_FLASH_BOOT)
+Saved PC:0x4037e649
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce2820,len:0x10cc
+load:0x403c8700,len:0xc2c
+load:0x403cb700,len:0x30c0
+entry 0x403c88b8
+==========================================
+M5AtomS3R + AtomPoE Cue & Tally Controller
+==========================================
+[Display] Double buffer (M5Canvas) allocated successfully: 32KB.
+[Display] Free PSRAM: 8155 KB, Free Heap: 8442 KB
+[Time] Timezone applied: Europe/London (GMT0BST,M3.5.0/1,M10.5.0)
+[Power] Low-Power Mode Applied: CPU @ 80 MHz (APB: 80 MHz). BT radio OFF.
+[ETH] Initializing W5500 SPI (SCK:5, CS:6, MISO:7, MOSI:8)...
+[Network] Configuring DHCP (Automatic IP Assignment)
+[ETH] Hardware driver started
+[ETH] W5500 SPI Ethernet initialized. Waiting for PoE link / DHCP...
+[WebServer] HTTP Server started listening on port 80
+[Network] Initializing MycilaESPConnect...
+[mDNS] Service _cuelx-tally._udp registered on port 8990
+[Task] Socket.IO background task running on Core 0
+[Network] State: 1 -> 2
+[   997][E][STA.cpp:540] disconnect(): STA disconnect failed! 0x3001: ESP_ERR_WIFI_NOT_INIT
+[  1072][E][NetworkUdp.cpp:312] parsePacket(): could not check for data in buffer length: 9
+[  1098][E][NetworkUdp.cpp:312] parsePacket(): could not check for data in buffer length: 9
+[  2937][E][NetworkUdp.cpp:312] parsePacket(): could not check for data in buffer length: 9
+[  2947][E][NetworkUdp.cpp:312] parsePacket(): could not check for data in buffer length: 9
+[ETH] Cable connected (Link UP)
+[  2958][E][NetworkUdp.cpp:312] parsePacket(): could not check for data in buffer length: 9
+[  2970][E][NetworkUdp.cpp:312] parsePacket(): could not check for data in buffer length: 9
+[  3470][E][NetworkUdp.cpp:312] parsePacket(): could not check for data in buffer length: 9
+[  3481][E][NetworkUdp.cpp:312] parsePacket(): could not check for data in buffer length: 9
+[  3486][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (8048)[  w i3f5i0:1s]t[aE ]i[sN ectownonrekcUtdipn.gc,p pr:e3turn error
+12] parsePacket[  3501][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+(): could not check for data in buffer length: 9
+E (8063) wifi:sta is connecting, return error
+[  3526][E][NetworkUdp.cpp:312] parsePacket(): could not check for data in buffer length: 9
+[  4666][E][NetworkUdp.cpp:312] parsePacket(): could not check for data in buffer length: 9
+[  4677][E][NetworkUdp.cpp:312] parsePacket(): could not check for data in buffer length: 9
+[ETH] IP Assigned (DHCP): 10.32.16.94
+[Network] PoE Ethernet active (10.32.16.94). Disabling Wi-Fi AP to eliminate multi-IP and reduce radio load.
+[TallyArbiter] Connecting to 10.32.3.2:4455
+[Time] Timezone applied: Europe/London (GMT0BST,M3.5.0/1,M10.5.0)
+[  4705][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[TallyArbiter] Ensuring connection to server...
+[TallyArbiter] Connecting to 10.32.3.2:4455
+[Time] Timezone applied: Europe/London (GMT0BST,M3.5.0/1,M10.5.0)
+[TallyArbiter] Connected successfully.
+[  7128][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (11686) wifi:sta is connecting, return error
+[  7139][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (11697) wifi:sta is connecting, return error
+[  9553][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (14111) wifi:sta is connecting, return error
+[  9564][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (14122) wifi:sta is connecting, return error
+[ 11978][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (16537) wifi:sta is connecting, return error
+[ 11990][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (16548) wifi:sta is connecting, return error
+[ 14404][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (18963) wifi:sta is connecting, return error
+[ 14416][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (18974) wifi:sta is connecting, return error
+[ 16830][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (21388) wifi:sta is connecting, return error
+[ 16841][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (21400) wifi:sta is connecting, return error
+[ 19256][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (23814) wifi:sta is connecting, return error
+[ 19267][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (23825) wifi:sta is connecting, return error
+[ 21071][W][MycilaESPConnect_Lifecycle.cpp:126] loop(): [ESPCONNECT] Connection timeout and WiFi is still active: forcing disconnect...
+[ 21088][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[Network] State: 2 -> 3
+[Network] State: 3 -> 9
+[Network] State: 9 -> 10
+[Power] Inactive for 60s in standby/off. Backlight auto-dimmed to 10% to minimize PoE heating.
+[Network] State: 10 -> 12
+[Network] Portal timeout reached; auto-restart prevented. Continuing normal operation.
+[201142][W][MycilaESPConnect_Lifecycle.cpp:184] loop(): [ESPCONNECT] Portal timeout!
+[Network] State: 12 -> 1
+[Network] State: 1 -> 2
+[203611][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (208170) wifi:sta is connecting, return error
+[203623][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (208181) wifi:sta is connecting, return error
+[206037][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (210595) wifi:sta is connecting, return error
+[206048][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (210607) wifi:sta is connecting, return error
+[208463][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (213021) wifi:sta is connecting, return error
+[208474][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (213032) wifi:sta is connecting, return error
+[210888][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (215447) wifi:sta is connecting, return error
+[210900][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (215458) wifi:sta is connecting, return error
+[213313][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (217872) wifi:sta is connecting, return error
+[213325][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (217883) wifi:sta is connecting, return error
+[215739][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (220298) wifi:sta is connecting, return error
+[215751][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (220309) wifi:sta is connecting, return error
+[218165][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (222724) wifi:sta is connecting, return error
+[218177][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (222735) wifi:sta is connecting, return error
+[220591][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (225149) wifi:sta is connecting, return error
+[220602][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (225160) wifi:sta is connecting, return error
+[221197][W][MycilaESPConnect_Lifecycle.cpp:126] loop(): [ESPCONNECT] Connection timeout and WiFi is still active: forcing disconnect...
+[221213][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[Network] State: 2 -> 3
+[Network] State: 3 -> 9
+[Network] State: 9 -> 10
+[Network] State: 10 -> 12
+[Network] Portal timeout reached; auto-restart prevented. Continuing normal operation.
+[401280][W][MycilaESPConnect_Lifecycle.cpp:184] loop(): [ESPCONNECT] Portal timeout!
+[Network] State: 12 -> 1
+[Network] State: 1 -> 2
+[403750][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (408309) wifi:sta is connecting, return error
+[403762][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (408320) wifi:sta is connecting, return error
+[406176][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (410734) wifi:sta is connecting, return error
+[406187][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (410745) wifi:sta is connecting, return error
+[408601][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (413160) wifi:sta is connecting, return error
+[408613][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (413171) wifi:sta is connecting, return error
+[411027][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (415585) wifi:sta is connecting, return error
+[411038][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (415597) wifi:sta is connecting, return error
+[413452][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (418011) wifi:sta is connecting, return error
+[413464][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (418022) wifi:sta is connecting, return error
+[415878][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (420436) wifi:sta is connecting, return error
+[415889][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (420448) wifi:sta is connecting, return error
+[418303][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (422862) wifi:sta is connecting, return error
+[418315][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (422873) wifi:sta is connecting, return error
+[420729][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (425287) wifi:sta is connecting, return error
+[420740][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (425299) wifi:sta is connecting, return error
+[421335][W][MycilaESPConnect_Lifecycle.cpp:126] loop(): [ESPCONNECT] Connection timeout and WiFi is still active: forcing disconnect...
+[421352][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[Network] State: 2 -> 3
+[Network] State: 3 -> 9
+[Network] State: 9 -> 10
+[Network] State: 10 -> 12
+[Network] Portal timeout reached; auto-restart prevented. Continuing normal operation.
+[601403][W][MycilaESPConnect_Lifecycle.cpp:184] loop(): [ESPCONNECT] Portal timeout!
+[Network] State: 12 -> 1
+[Network] State: 1 -> 2
+[603870][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (608428) wifi:sta is connecting, return error
+[603881][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (608439) wifi:sta is connecting, return error
+[606295][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (610855) wifi:sta is connecting, return error
+[606307][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (610866) wifi:sta is connecting, return error
+[608722][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (613280) wifi:sta is connecting, return error
+[608734][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (613291) wifi:sta is connecting, return error
+[611147][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (615705) wifi:sta is connecting, return error
+[611158][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (615717) wifi:sta is connecting, return error
+[613572][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (618131) wifi:sta is connecting, return error
+[613584][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (618142) wifi:sta is connecting, return error
+[615998][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (620557) wifi:sta is connecting, return error
+[616010][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (620568) wifi:sta is connecting, return error
+[618424][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (622982) wifi:sta is connecting, return error
+[618436][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (622993) wifi:sta is connecting, return error
+[620849][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (625407) wifi:sta is connecting, return error
+[620860][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (625419) wifi:sta is connecting, return error
+[621456][W][MycilaESPConnect_Lifecycle.cpp:126] loop(): [ESPCONNECT] Connection timeout and WiFi is still active: forcing disconnect...
+[621473][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[Network] State: 2 -> 3
+[Network] State: 3 -> 9
+Guru Meditation Error: Core  0 panic'ed (LoadStoreError). Exception was unhandled.
+
+Core  0 register dump:
+PC      : 0x4211c4ce  PS      : 0x00060230  A0      : 0x820ac7fc  A1      : 0x3fcb7b80  
+A2      : 0x00000000  A3      : 0x00000000  A4      : 0x00060220  A5      : 0x00060223  
+A6      : 0x00000001  A7      : 0x3fc98fc0  A8      : 0xbaad5678  A9      : 0x420d3784  
+A10     : 0x00060223  A11     : 0x00000000  A12     : 0x00060220  A13     : 0x00060223  
+A14     : 0x3fcc1ea0  A15     : 0x0000cdcd  SAR     : 0x00000011  EXCCAUSE: 0x00000003  
+EXCVADDR: 0x420d3813  LBEG    : 0x400570e8  LEND    : 0x400570f3  LCOUNT  : 0x00000000  
+
+
+Backtrace: 0x4211c4cb:0x3fcb7b80 0x420ac7f9:0x3fcb7ba0 0x420aca20:0x3fcb7be0 0x4206ed19:0x3fcb7c00 0x420acb9d:0x3fcb7c20 0x420ac0c4:0x3fcb7c60 0x420ac31d:0x3fcb7ca0 0x4037f415:0x3fcb7cd0
+
+
+
+
+ELF file SHA256: 5708db30c
+
+Rebooting...
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0xc (RTC_SW_CPU_RST),boot:0x18 (SPI_FAST_FLASH_BOOT)
+Saved PC:0x4037e649
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce2820,len:0x10cc
+load:0x403c8700,len:0xc2c
+load:0x403cb700,len:0x30c0
+entry 0x403c88b8
+==========================================
+M5AtomS3R + AtomPoE Cue & Tally Controller
+==========================================
+[Display] Double buffer (M5Canvas) allocated successfully: 32KB.
+[Display] Free PSRAM: 8155 KB, Free Heap: 8442 KB
+[Time] Timezone applied: Europe/London (GMT0BST,M3.5.0/1,M10.5.0)
+[Power] Low-Power Mode Applied: CPU @ 80 MHz (APB: 80 MHz). BT radio OFF.
+[ETH] Initializing W5500 SPI (SCK:5, CS:6, MISO:7, MOSI:8)...
+[Network] Configuring DHCP (Automatic IP Assignment)
+[ETH] Hardware driver started
+[ETH] W5500 SPI Ethernet initialized. Waiting for PoE link / DHCP...
+[WebServer] HTTP Server started listening on port 80
+[Network] Initializing MycilaESPConnect...
+[mDNS] Service _cuelx-tally._udp registered on port 8990
+[Task] Socket.IO background task running on Core 0
+[Network] State: 1 -> 2
+[   997][E][STA.cpp:540] disconnect(): STA disconnect failed! 0x3001: ESP_ERR_WIFI_NOT_INIT
+[  1072][E][NetworkUdp.cpp:312] parsePacket(): could not check for data in buffer length: 9
+[  2938][E][NetworkUdp.cpp:312] parsePacket(): could not check for data in buffer length: 9
+[  2948][E][NetworkUdp.cpp:312] parsePacket(): could not check for data in buffer length: 9
+[ETH] Cable connected (Link UP)
+[  2960][E][NetworkUdp.cpp:312] parsePacket(): could not check for data in buffer length: 9
+[  2971][E][NetworkUdp.cpp:312] parsePacket(): could not check for data in buffer length: 9
+[  3481][E][NetworkUdp.cpp:312] parsePacket(): could not check for data in buffer length: 9
+[  3487][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (8048) wifi:sta is connecting, return error
+[  3501][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (8059) wifi:sta is connecting, return error
+[  3512][E][NetworkUdp.cpp:312] parsePacket(): could not check for data in buffer length: 9
+[ETH] IP Assigned (DHCP): 10.32.16.94
+[Network] PoE Ethernet active (10.32.16.94). Disabling Wi-Fi AP to eliminate multi-IP and reduce radio load.
+[TallyArbiter] Connecting to 10.32.3.2:4455
+[Time] Timezone applied: Europe/London (GMT0BST,M3.5.0/1,M10.5.0)
+[  4703][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[TallyArbiter] Ensuring connection to server...
+[TallyArbiter] Connecting to 10.32.3.2:4455
+[Time] Timezone applied: Europe/London (GMT0BST,M3.5.0/1,M10.5.0)
+[TallyArbiter] Connected successfully.
+[  7126][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (11685) wifi:sta is connecting, return error
+[  7138][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (11696) wifi:sta is connecting, return error
+[  9552][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (14111) wifi:sta is connecting, return error
+[  9564][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (14123) wifi:sta is connecting, return error
+[ 11979][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (16537) wifi:sta is connecting, return error
+[ 11990][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (16548) wifi:sta is connecting, return error
+[ 14405][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (18964) wifi:sta is connecting, return error
+[ 14417][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (18975) wifi:sta is connecting, return error
+[ 16831][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (21389) wifi:sta is connecting, return error
+[ 16842][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (21400) wifi:sta is connecting, return error
+[ 19256][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (23815) wifi:sta is connecting, return error
+[ 19268][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (23826) wifi:sta is connecting, return error
+[ 21073][W][MycilaESPConnect_Lifecycle.cpp:126] loop(): [ESPCONNECT] Connection timeout and WiFi is still active: forcing disconnect...
+[ 21090][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[Network] State: 2 -> 3
+[Network] State: 3 -> 9
+
+assert failed: igmp_lookup_group /IDF/components/lwip/lwip/src/core/ipv4/igmp.c:274 (igmp_lookup_group: first group must be allsystems)
+
+
+Backtrace: 0x4037e495:0x3fcb79e0 0x4037e45d:0x3fcb7a00 0x40385506:0x3fcb7a20 0x42079989:0x3fcb7b60 0x42079ae0:0x3fcb7b80 0x420ac816:0x3fcb7ba0 0x420aca20:0x3fcb7be0 0x4206ed19:0x3fcb7c00 0x420acb9d:0x3fcb7c20 0x420ac0c4:0x3fcb7c60 0x420ac31d:0x3fcb7ca0 0x4037f415:0x3fcb7cd0
+
+
+
+
+ELF file SHA256: 5708db30c
+
+Rebooting...
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0xc (RTC_SW_CPU_RST),boot:0x18 (SPI_FAST_FLASH_BOOT)
+Saved PC:0x4037e649
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce2820,len:0x10cc
+load:0x403c8700,len:0xc2c
+load:0x403cb700,len:0x30c0
+entry 0x403c88b8
+==========================================
+M5AtomS3R + AtomPoE Cue & Tally Controller
+==========================================
+[Display] Double buffer (M5Canvas) allocated successfully: 32KB.
+[Display] Free PSRAM: 8155 KB, Free Heap: 8442 KB
+[Time] Timezone applied: Europe/London (GMT0BST,M3.5.0/1,M10.5.0)
+[Power] Low-Power Mode Applied: CPU @ 80 MHz (APB: 80 MHz). BT radio OFF.
+[ETH] Initializing W5500 SPI (SCK:5, CS:6, MISO:7, MOSI:8)...
+[Network] Configuring DHCP (Automatic IP Assignment)
+[ETH] Hardware driver started
+[ETH] W5500 SPI Ethernet initialized. Waiting for PoE link / DHCP...
+[WebServer] HTTP Server started listening on port 80
+[Network] Initializing MycilaESPConnect...
+[mDNS] Service _cuelx-tally._udp registered on port 8990
+[Task] Socket.IO background task running on Core 0
+[Network] State: 1 -> 2
+[  2933][E][NetworkUdp.cpp:312] parsePacket(): could not check for data in buffer length: 9
+[  2944][E][NetworkUdp.cpp:312] parsePacket(): could not check for data in buffer length: 9
+[ETH] Cable connected (Link UP)
+[  2955][E][NetworkUdp.cpp:312] parsePacket(): could not check for data in buffer length: 9
+[  3486][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (8041) wifi:sta is connecting, return error
+[  3498][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (8052) wifi:sta is connecting, return error
+[  3509][E][NetworkUdp.cpp:312] parsePacket(): could not check for data in buffer length: 9
+[ETH] IP Assigned (DHCP): 10.32.16.94
+[Network] PoE Ethernet active (10.32.16.94). Disabling Wi-Fi AP to eliminate multi-IP and reduce radio load.
+[TallyArbiter] Connecting to 10.32.3.2:4455
+[Time] Timezone applied: Europe/London (GMT0BST,M3.5.0/1,M10.5.0)
+[  4702][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[TallyArbiter] Ensuring connection to server...
+[TallyArbiter] Connecting to 10.32.3.2:4455
+[Time] Timezone applied: Europe/London (GMT0BST,M3.5.0/1,M10.5.0)
+[TallyArbiter] Connected successfully.
+[  7125][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (11680) wifi:sta is connecting, return error
+[  7137][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (11691) wifi:sta is connecting, return error
+[  9551][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (14106) wifi:sta is connecting, return error
+[  9563][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (14117) wifi:sta is connecting, return error
+[ 11977][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (16532) wifi:sta is connecting, return error
+[ 11989][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (16543) wifi:sta is connecting, return error
+[ 14403][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (18958) wifi:sta is connecting, return error
+[ 14414][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (18969) wifi:sta is connecting, return error
+[ 16828][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (21383) wifi:sta is connecting, return error
+[ 16840][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (21394) wifi:sta is connecting, return error
+[ 19254][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (23808) wifi:sta is connecting, return error
+[ 19265][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (23820) wifi:sta is connecting, return error
+[ 21072][W][MycilaESPConnect_Lifecycle.cpp:126] loop(): [ESPCONNECT] Connection timeout and WiFi is still active: forcing disconnect...
+[ 21089][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[Network] State: 2 -> 3
+[Network] State: 3 -> 9
+[Network] State: 9 -> 10
+[Power] Inactive for 60s in standby/off. Backlight auto-dimmed to 10% to minimize PoE heating.
+[Network] State: 10 -> 12
+[Network] Portal timeout reached; auto-restart prevented. Continuing normal operation.
+[201143][W][MycilaESPConnect_Lifecycle.cpp:184] loop(): [ESPCONNECT] Portal timeout!
+[Network] State: 12 -> 1
+[Network] State: 1 -> 2
+[203610][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (208165) wifi:sta is connecting, return error
+[203622][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (208176) wifi:sta is connecting, return error
+[206036][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (210590) wifi:sta is connecting, return error
+[206047][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (210602) wifi:sta is connecting, return error
+[208461][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (213016) wifi:sta is connecting, return error
+[208473][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (213028) wifi:sta is connecting, return error
+[210887][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (215442) wifi:sta is connecting, return error
+[210899][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (215453) wifi:sta is connecting, return error
+[213312][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (217867) wifi:sta is connecting, return error
+[213324][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (217879) wifi:sta is connecting, return error
+[215738][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (220293) wifi:sta is connecting, return error
+[215750][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (220304) wifi:sta is connecting, return error
+[218164][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (222719) wifi:sta is connecting, return error
+[218175][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (222730) wifi:sta is connecting, return error
+[220590][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (225144) wifi:sta is connecting, return error
+[220601][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (225156) wifi:sta is connecting, return error
+[221196][W][MycilaESPConnect_Lifecycle.cpp:126] loop(): [ESPCONNECT] Connection timeout and WiFi is still active: forcing disconnect...
+[221211][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[Network] State: 2 -> 3
+[Network] State: 3 -> 9
+Guru Meditation Error: Core  0 panic'ed (LoadProhibited). Exception was unhandled.
+
+Core  0 register dump:
+PC      : 0x4211c4ce  PS      : 0x00060430  A0      : 0x820ac7fc  A1      : 0x3fcb7b80  
+A2      : 0x00000000  A3      : 0x00000000  A4      : 0x00060420  A5      : 0x00060423  
+A6      : 0x00000001  A7      : 0x3fc98fc0  A8      : 0x00000000  A9      : 0x00000118  
+A10     : 0x00060423  A11     : 0x00000000  A12     : 0x00060420  A13     : 0x00060423  
+A14     : 0x3fcc1ea0  A15     : 0x0000cdcd  SAR     : 0x00000013  EXCCAUSE: 0x0000001c  
+EXCVADDR: 0x000001a7  LBEG    : 0x400570e8  LEND    : 0x400570f3  LCOUNT  : 0x00000000  
+
+
+Backtrace: 0x4211c4cb:0x3fcb7b80 0x420ac7f9:0x3fcb7ba0 0x420aca20:0x3fcb7be0 0x4206ed19:0x3fcb7c00 0x420acb9d:0x3fcb7c20 0x420ac0c4:0x3fcb7c60 0x420ac31d:0x3fcb7ca0 0x4037f415:0x3fcb7cd0
+
+
+
+
+ELF file SHA256: 5708db30c
+
+Rebooting...
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0xc (RTC_SW_CPU_RST),boot:0x18 (SPI_FAST_FLASH_BOOT)
+Saved PC:0x4037e649
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce2820,len:0x10cc
+load:0x403c8700,len:0xc2c
+load:0x403cb700,len:0x30c0
+entry 0x403c88b8
+==========================================
+M5AtomS3R + AtomPoE Cue & Tally Controller
+==========================================
+[Display] Double buffer (M5Canvas) allocated successfully: 32KB.
+[Display] Free PSRAM: 8155 KB, Free Heap: 8442 KB
+[Time] Timezone applied: Europe/London (GMT0BST,M3.5.0/1,M10.5.0)
+[Power] Low-Power Mode Applied: CPU @ 80 MHz (APB: 80 MHz). BT radio OFF.
+[ETH] Initializing W5500 SPI (SCK:5, CS:6, MISO:7, MOSI:8)...
+[Network] Configuring DHCP (Automatic IP Assignment)
+[ETH] Hardware driver started
+[ETH] W5500 SPI Ethernet initialized. Waiting for PoE link / DHCP...
+[WebServer] HTTP Server started listening on port 80
+[Network] Initializing MycilaESPConnect...
+[mDNS] Service _cuelx-tally._udp registered on port 8990
+[Task] Socket.IO background task running on Core 0
+[Network] State: 1 -> 2
+[ETH] Cable connected (Link UP)
+[  3482][E][NetworkUdp.cpp:312] parsePacket(): could not check for data in buffer length: 9
+[  3485][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+[  3500][E][NetworkUdp.cpp:312] parsePacket(): could not check for data in buffer length: 9
+E (8049) wifi:sta is connecting, return error
+[  3502][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (8067) wifi:sta is connecting, return error
+[ETH] IP Assigned (DHCP): 10.32.16.94
+[Network] PoE Ethernet active (10.32.16.94). Disabling Wi-Fi AP to eliminate multi-IP and reduce radio load.
+[TallyArbiter] Ensuring connection to server...
+[TallyArbiter] Connecting to 10.32.3.2:4455
+[TallyArbiter] Connecting to 10.32.3.2:4455
+[Time] Timezone applied: Europe/London (GMT0BST,M3.5.0/1,M10.5.0)
+[  4213][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[Time] Timezone applied: Europe/London (GMT0BST,M3.5.0/1,M10.5.0)
+[TallyArbiter] Connected successfully.
+[  6636][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (11195) wifi:sta is connecting, return error
+[  6647][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (11206) wifi:sta is connecting, return error
+[  9062][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (13621) wifi:sta is connecting, return error
+[  9074][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (13632) wifi:sta is connecting, return error
+[ 11488][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (16046) wifi:sta is connecting, return error
+[ 11499][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (16058) wifi:sta is connecting, return error
+[ 13913][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (18472) wifi:sta is connecting, return error
+[ 13925][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (18484) wifi:sta is connecting, return error
+[ 16339][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (20898) wifi:sta is connecting, return error
+[ 16351][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (20909) wifi:sta is connecting, return error
+[ 18765][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (23324) wifi:sta is connecting, return error
+[ 18776][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (23335) wifi:sta is connecting, return error
+[ 21070][W][MycilaESPConnect_Lifecycle.cpp:126] loop(): [ESPCONNECT] Connection timeout and WiFi is still active: forcing disconnect...
+[ 21087][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[Network] State: 2 -> 3
+[Network] State: 3 -> 9
+[Network] State: 9 -> 10
+[Power] Inactive for 60s in standby/off. Backlight auto-dimmed to 10% to minimize PoE heating.
+[Network] State: 10 -> 12
+[Network] Portal timeout reached; auto-restart prevented. Continuing normal operation.
+[201142][W][MycilaESPConnect_Lifecycle.cpp:184] loop(): [ESPCONNECT] Portal timeout!
+[Network] State: 12 -> 1
+[Network] State: 1 -> 2
+[203608][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (208167) wifi:sta is connecting, return error
+[203620][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (208179) wifi:sta is connecting, return error
+[206034][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (210593) wifi:sta is connecting, return error
+[206046][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (210604) wifi:sta is connecting, return error
+[208460][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (213019) wifi:sta is connecting, return error
+[208471][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (213030) wifi:sta is connecting, return error
+[210886][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (215445) wifi:sta is connecting, return error
+[210897][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (215456) wifi:sta is connecting, return error
+[213311][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (217870) wifi:sta is connecting, return error
+[213324][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (217882) wifi:sta is connecting, return error
+[215737][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (220296) wifi:sta is connecting, return error
+[215748][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (220307) wifi:sta is connecting, return error
+[218162][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (222721) wifi:sta is connecting, return error
+[218174][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (222733) wifi:sta is connecting, return error
+[220588][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (225148) wifi:sta is connecting, return error
+[220600][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (225159) wifi:sta is connecting, return error
+[221193][W][MycilaESPConnect_Lifecycle.cpp:126] loop(): [ESPCONNECT] Connection timeout and WiFi is still active: forcing disconnect...
+[221208][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[Network] State: 2 -> 3
+[Network] State: 3 -> 9
+[Network] State: 9 -> 10
+[Network] State: 10 -> 12
+[Network] Portal timeout reached; auto-restart prevented. Continuing normal operation.
+[401265][W][MycilaESPConnect_Lifecycle.cpp:184] loop(): [ESPCONNECT] Portal timeout!
+[Network] State: 12 -> 1
+[Network] State: 1 -> 2
+[403733][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (408292) wifi:sta is connecting, return error
+[403745][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (408303) wifi:sta is connecting, return error
+[406159][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (410718) wifi:sta is connecting, return error
+[406171][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (410730) wifi:sta is connecting, return error
+[408584][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (413143) wifi:sta is connecting, return error
+[408596][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (413155) wifi:sta is connecting, return error
+[411010][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (415569) wifi:sta is connecting, return error
+[411022][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (415580) wifi:sta is connecting, return error
+[413436][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (417995) wifi:sta is connecting, return error
+[413447][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (418006) wifi:sta is connecting, return error
+[415861][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (420420) wifi:sta is connecting, return error
+[415873][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (420431) wifi:sta is connecting, return error
+[418287][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (422846) wifi:sta is connecting, return error
+[418299][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (422857) wifi:sta is connecting, return error
+[420713][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (425272) wifi:sta is connecting, return error
+[420725][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (425283) wifi:sta is connecting, return error
+[421318][W][MycilaESPConnect_Lifecycle.cpp:126] loop(): [ESPCONNECT] Connection timeout and WiFi is still active: forcing disconnect...
+[421336][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[Network] State: 2 -> 3
+[Network] State: 3 -> 9
+[Network] State: 9 -> 10
+[Network] State: 10 -> 12
+[Network] Portal timeout reached; auto-restart prevented. Continuing normal operation.
+[601387][W][MycilaESPConnect_Lifecycle.cpp:184] loop(): [ESPCONNECT] Portal timeout!
+[Network] State: 12 -> 1
+[Network] State: 1 -> 2
+[603854][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (608413) wifi:sta is connecting, return error
+[603866][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (608424) wifi:sta is connecting, return error
+[606279][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (610838) wifi:sta is connecting, return error
+[606291][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (610849) wifi:sta is connecting, return error
+[608705][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (613264) wifi:sta is connecting, return error
+[608717][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (613275) wifi:sta is connecting, return error
+[611130][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (615689) wifi:sta is connecting, return error
+[611142][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (615701) wifi:sta is connecting, return error
+[613556][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (618115) wifi:sta is connecting, return error
+[613568][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (618126) wifi:sta is connecting, return error
+[615982][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (620541) wifi:sta is connecting, return error
+[615994][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (620552) wifi:sta is connecting, return error
+[618407][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (622966) wifi:sta is connecting, return error
+[618419][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (622977) wifi:sta is connecting, return error
+[620832][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (625391) wifi:sta is connecting, return error
+[620844][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (625402) wifi:sta is connecting, return error
+[621440][W][MycilaESPConnect_Lifecycle.cpp:126] loop(): [ESPCONNECT] Connection timeout and WiFi is still active: forcing disconnect...
+[621457][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[Network] State: 2 -> 3
+[Network] State: 3 -> 9
+[Network] State: 9 -> 10
+[Network] State: 10 -> 12
+[Network] Portal timeout reached; auto-restart prevented. Continuing normal operation.
+[801510][W][MycilaESPConnect_Lifecycle.cpp:184] loop(): [ESPCONNECT] Portal timeout!
+[Network] State: 12 -> 1
+[Network] State: 1 -> 2
+[803976][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (808536) wifi:sta is connecting, return error
+[803988][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (808547) wifi:sta is connecting, return error
+[806402][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (810961) wifi:sta is connecting, return error
+[806414][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (810973) wifi:sta is connecting, return error
+[808828][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (813387) wifi:sta is connecting, return error
+[808839][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (813398) wifi:sta is connecting, return error
+[811253][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (815812) wifi:sta is connecting, return error
+[811265][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (815824) wifi:sta is connecting, return error
+[813679][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (818238) wifi:sta is connecting, return error
+[813691][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (818249) wifi:sta is connecting, return error
+[816105][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (820664) wifi:sta is connecting, return error
+[816117][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (820675) wifi:sta is connecting, return error
+[818530][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (823089) wifi:sta is connecting, return error
+[818542][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (823101) wifi:sta is connecting, return error
+[820956][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (825515) wifi:sta is connecting, return error
+[820968][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (825526) wifi:sta is connecting, return error
+[821562][W][MycilaESPConnect_Lifecycle.cpp:126] loop(): [ESPCONNECT] Connection timeout and WiFi is still active: forcing disconnect...
+[821579][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[Network] State: 2 -> 3
+[Network] State: 3 -> 9
+[Network] State: 9 -> 10
+[Network] State: 10 -> 12
+[Network] Portal timeout reached; auto-restart prevented. Continuing normal operation.
+[1001633][W][MycilaESPConnect_Lifecycle.cpp:184] loop(): [ESPCONNECT] Portal timeout!
+[Network] State: 12 -> 1
+[Network] State: 1 -> 2
+[1004100][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1008659) wifi:sta is connecting, return error
+[1004112][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1008671) wifi:sta is connecting, return error
+[1006525][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1011085) wifi:sta is connecting, return error
+[1006538][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1011096) wifi:sta is connecting, return error
+[1008951][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1013510) wifi:sta is connecting, return error
+[1008963][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1013522) wifi:sta is connecting, return error
+[1011376][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1015935) wifi:sta is connecting, return error
+[1011388][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1015947) wifi:sta is connecting, return error
+[1013802][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1018361) wifi:sta is connecting, return error
+[1013813][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1018372) wifi:sta is connecting, return error
+[1016228][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1020787) wifi:sta is connecting, return error
+[1016239][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1020798) wifi:sta is connecting, return error
+[1018653][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1023213) wifi:sta is connecting, return error
+[1018665][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1023224) wifi:sta is connecting, return error
+[1021080][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1025639) wifi:sta is connecting, return error
+[1021091][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1025650) wifi:sta is connecting, return error
+[1021686][W][MycilaESPConnect_Lifecycle.cpp:126] loop(): [ESPCONNECT] Connection timeout and WiFi is still active: forcing disconnect...
+[1021701][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[Network] State: 2 -> 3
+[Network] State: 3 -> 9
+[Network] State: 9 -> 10
+[Network] State: 10 -> 12
+[Network] Portal timeout reached; auto-restart prevented. Continuing normal operation.
+[1201759][W][MycilaESPConnect_Lifecycle.cpp:184] loop(): [ESPCONNECT] Portal timeout!
+[Network] State: 12 -> 1
+[Network] State: 1 -> 2
+[1204226][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1208785) wifi:sta is connecting, return error
+[1204238][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1208796) wifi:sta is connecting, return error
+[1206652][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1211211) wifi:sta is connecting, return error
+[1206664][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1211222) wifi:sta is connecting, return error
+[1209078][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1213637) wifi:sta is connecting, return error
+[1209089][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1213648) wifi:sta is connecting, return error
+[1211503][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1216063) wifi:sta is connecting, return error
+[1211516][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1216074) wifi:sta is connecting, return error
+[1213929][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1218488) wifi:sta is connecting, return error
+[1213941][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1218500) wifi:sta is connecting, return error
+[1216355][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1220914) wifi:sta is connecting, return error
+[1216367][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1220926) wifi:sta is connecting, return error
+[1218781][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1223340) wifi:sta is connecting, return error
+[1218793][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1223352) wifi:sta is connecting, return error
+[1221207][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1225766) wifi:sta is connecting, return error
+[1221219][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1225777) wifi:sta is connecting, return error
+[1221811][W][MycilaESPConnect_Lifecycle.cpp:126] loop(): [ESPCONNECT] Connection timeout and WiFi is still active: forcing disconnect...
+[1221828][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[Network] State: 2 -> 3
+[Network] State: 3 -> 9
+[Network] State: 9 -> 10
+[Network] State: 10 -> 12
+[Network] Portal timeout reached; auto-restart prevented. Continuing normal operation.
+[1401879][W][MycilaESPConnect_Lifecycle.cpp:184] loop(): [ESPCONNECT] Portal timeout!
+[Network] State: 12 -> 1
+[Network] State: 1 -> 2
+[1404350][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1408909) wifi:sta is connecting, return error
+[1404361][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1408920) wifi:sta is connecting, return error
+[1406775][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1411335) wifi:sta is connecting, return error
+[1406788][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1411346) wifi:sta is connecting, return error
+[1409201][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1413760) wifi:sta is connecting, return error
+[1409213][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1413772) wifi:sta is connecting, return error
+[1411627][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1416186) wifi:sta is connecting, return error
+[1411639][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1416197) wifi:sta is connecting, return error
+[1414053][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1418613) wifi:sta is connecting, return error
+[1414065][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1418624) wifi:sta is connecting, return error
+[1416479][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1421038) wifi:sta is connecting, return error
+[1416491][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1421050) wifi:sta is connecting, return error
+[1418905][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1423464) wifi:sta is connecting, return error
+[1418917][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1423476) wifi:sta is connecting, return error
+[1421331][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1425890) wifi:sta is connecting, return error
+[1421343][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1425902) wifi:sta is connecting, return error
+[1421935][W][MycilaESPConnect_Lifecycle.cpp:126] loop(): [ESPCONNECT] Connection timeout and WiFi is still active: forcing disconnect...
+[1421950][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[Network] State: 2 -> 3
+[Network] State: 3 -> 9
+[Network] State: 9 -> 10
+[Power] Display woke from dim; brightness restored to 90
+[Button] Single Click: Toggle Cue CH1 (Presenter Preview)
+[TSL] Sent CH 1 PREVIEW (TA)
+[Button] Single Click: Toggle Cue CH1 (Presenter Preview)
+[TSL] Sent CH 1 OFF (TA)
+[Button] Single Click: Toggle Cue CH1 (Presenter Preview)
+[TSL] Sent CH 1 PREVIEW (TA)
+[Button] Single Click: Toggle Cue CH1 (Presenter Preview)
+[TSL] Sent CH 1 OFF (TA)
+[Power] Inactive for 60s in standby/off. Backlight auto-dimmed to 10% to minimize PoE heating.
+[Network] State: 10 -> 12
+[Network] Portal timeout reached; auto-restart prevented. Continuing normal operation.
+[1602011][W][MycilaESPConnect_Lifecycle.cpp:184] loop(): [ESPCONNECT] Portal timeout!
+[Network] State: 12 -> 1
+[Network] State: 1 -> 2
+[1604496][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1609055) wifi:sta is connecting, return error
+[1604507][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1609066) wifi:sta is connecting, return error
+[1606921][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1611480) wifi:sta is connecting, return error
+[1606933][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1611492) wifi:sta is connecting, return error
+[1609346][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1613906) wifi:sta is connecting, return error
+[1609358][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1613917) wifi:sta is connecting, return error
+[1611773][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1616332) wifi:sta is connecting, return error
+[1611785][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1616344) wifi:sta is connecting, return error
+[1614199][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1618758) wifi:sta is connecting, return error
+[1614211][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1618769) wifi:sta is connecting, return error
+[1616625][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1621184) wifi:sta is connecting, return error
+[1616636][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1621195) wifi:sta is connecting, return error
+[1619050][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1623609) wifi:sta is connecting, return error
+[1619062][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1623621) wifi:sta is connecting, return error
+[1621476][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (1626035) wifi:sta is connecting, return error
+[1621487][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (1626046) wifi:sta is connecting, return error
+[1622082][W][MycilaESPConnect_Lifecycle.cpp:126] loop(): [ESPCONNECT] Connection timeout and WiFi is still active: forcing disconnect...
+[1622099][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[Network] State: 2 -> 3
+[Network] State: 3 -> 9
+Guru Meditation Error: Core  0 panic'ed (LoadProhibited). Exception was unhandled.
+
+Core  0 register dump:
+PC      : 0x4211c4ce  PS      : 0x00060c30  A0      : 0x820ac7fc  A1      : 0x3fcb7b80  
+A2      : 0x00000000  A3      : 0x00000000  A4      : 0x00060c20  A5      : 0x00060c23  
+A6      : 0x00000001  A7      : 0x3fc98fc0  A8      : 0x00000000  A9      : 0x00000114  
+A10     : 0x00060c23  A11     : 0x00000000  A12     : 0x00060c20  A13     : 0x00060c23  
+A14     : 0x3fcc1ea0  A15     : 0x0000cdcd  SAR     : 0x0000000a  EXCCAUSE: 0x0000001c  
+EXCVADDR: 0x000001a3  LBEG    : 0x400570e8  LEND    : 0x400570f3  LCOUNT  : 0x00000000  
+
+
+Backtrace: 0x4211c4cb:0x3fcb7b80 0x420ac7f9:0x3fcb7ba0 0x420aca20:0x3fcb7be0 0x4206ed19:0x3fcb7c00 0x420acb9d:0x3fcb7c20 0x420ac0c4:0x3fcb7c60 0x420ac31d:0x3fcb7ca0 0x4037f415:0x3fcb7cd0
+
+
+
+
+ELF file SHA256: 5708db30c
+
+Rebooting...
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0xc (RTC_SW_CPU_RST),boot:0x18 (SPI_FAST_FLASH_BOOT)
+Saved PC:0x4037e649
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce2820,len:0x10cc
+load:0x403c8700,len:0xc2c
+load:0x403cb700,len:0x30c0
+entry 0x403c88b8
+==========================================
+M5AtomS3R + AtomPoE Cue & Tally Controller
+==========================================
+[Display] Double buffer (M5Canvas) allocated successfully: 32KB.
+[Display] Free PSRAM: 8155 KB, Free Heap: 8442 KB
+[Time] Timezone applied: Europe/London (GMT0BST,M3.5.0/1,M10.5.0)
+[Power] Low-Power Mode Applied: CPU @ 80 MHz (APB: 80 MHz). BT radio OFF.
+[ETH] Initializing W5500 SPI (SCK:5, CS:6, MISO:7, MOSI:8)...
+[Network] Configuring DHCP (Automatic IP Assignment)
+[ETH] Hardware driver started
+[ETH] W5500 SPI Ethernet initialized. Waiting for PoE link / DHCP...
+[WebServer] HTTP Server started listening on port 80
+[Network] Initializing MycilaESPConnect...
+[mDNS] Service _cuelx-tally._udp registered on port 8990
+[Task] Socket.IO background task running on Core 0
+[Network] State: 1 -> 2
+[   997][E][STA.cpp:540] disconnect(): STA disconnect failed! 0x3001: ESP_ERR_WIFI_NOT_INIT
+[  2945][E][NetworkUdp.cpp:312] parsePacket(): could not check for data in buffer length: 9
+[ETH] Cable connected (Link UP)
+[  3473][E][NetworkUdp.cpp:312] parsePacket(): could not check for data in buffer length: 9
+[  3485][E][NetworkUdp.cpp:312] parsePacket(): could not check for data in buffer length: 9
+[  3486][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+[  3503][E][NetworkUdp.cpp:312] parsePacket(): could not check for data in buffer length: 9
+E (8055) wifi:sta is connecting, return error
+[  3505][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (8073) wifi:sta is connecting, return error
+[  4672][E][NetworkUdp.cpp:312] parsePacket(): could not check for data in buffer length: 9
+[  4682][E][NetworkUdp.cpp:312] parsePacket(): could not check for data in buffer length: 9
+[ETH] IP Assigned (DHCP): 10.32.16.94
+[Network] PoE Ethernet active (10.32.16.94). Disabling Wi-Fi AP to eliminate multi-IP and reduce radio load.
+[TallyArbiter] Connecting to 10.32.3.2:4455
+[Time] Timezone applied: Europe/London (GMT0BST,M3.5.0/1,M10.5.0)
+[  4705][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[TallyArbiter] Ensuring connection to server...
+[TallyArbiter] Connecting to 10.32.3.2:4455
+[Time] Timezone applied: Europe/London (GMT0BST,M3.5.0/1,M10.5.0)
+[TallyArbiter] Connected successfully.
+[  7128][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (11690) wifi:sta is connecting, return error
+[  7140][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (11701) wifi:sta is connecting, return error
+[  9554][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (14116) wifi:sta is connecting, return error
+[  9566][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (14127) wifi:sta is connecting, return error
+[ 11980][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (16541) wifi:sta is connecting, return error
+[ 11991][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (16553) wifi:sta is connecting, return error
+[ 14405][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (18967) wifi:sta is connecting, return error
+[ 14417][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (18979) wifi:sta is connecting, return error
+[ 16831][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (21393) wifi:sta is connecting, return error
+[ 16843][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (21405) wifi:sta is connecting, return error
+[ 19257][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (23819) wifi:sta is connecting, return error
+[ 19269][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (23830) wifi:sta is connecting, return error
+[ 21071][W][MycilaESPConnect_Lifecycle.cpp:126] loop(): [ESPCONNECT] Connection timeout and WiFi is still active: forcing disconnect...
+[ 21088][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[Network] State: 2 -> 3
+[Network] State: 3 -> 9
+
+assert failed: igmp_lookup_group /IDF/components/lwip/lwip/src/core/ipv4/igmp.c:274 (igmp_lookup_group: first group must be allsystems)
+
+
+Backtrace: 0x4037e495:0x3fcb79e0 0x4037e45d:0x3fcb7a00 0x40385506:0x3fcb7a20 0x42079989:0x3fcb7b60 0x42079ae0:0x3fcb7b80 0x420ac816:0x3fcb7ba0 0x420aca20:0x3fcb7be0 0x4206ed19:0x3fcb7c00 0x420acb9d:0x3fcb7c20 0x420ac0c4:0x3fcb7c60 0x420ac31d:0x3fcb7ca0 0x4037f415:0x3fcb7cd0
+
+
+
+
+ELF file SHA256: 5708db30c
+
+Rebooting...
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0xc (RTC_SW_CPU_RST),boot:0x18 (SPI_FAST_FLASH_BOOT)
+Saved PC:0x4037e649
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce2820,len:0x10cc
+load:0x403c8700,len:0xc2c
+load:0x403cb700,len:0x30c0
+entry 0x403c88b8
+==========================================
+M5AtomS3R + AtomPoE Cue & Tally Controller
+==========================================
+[Display] Double buffer (M5Canvas) allocated successfully: 32KB.
+[Display] Free PSRAM: 8155 KB, Free Heap: 8442 KB
+[Time] Timezone applied: Europe/London (GMT0BST,M3.5.0/1,M10.5.0)
+[Power] Low-Power Mode Applied: CPU @ 80 MHz (APB: 80 MHz). BT radio OFF.
+[ETH] Initializing W5500 SPI (SCK:5, CS:6, MISO:7, MOSI:8)...
+[Network] Configuring DHCP (Automatic IP Assignment)
+[ETH] Hardware driver started
+[ETH] W5500 SPI Ethernet initialized. Waiting for PoE link / DHCP...
+[WebServer] HTTP Server started listening on port 80
+[Network] Initializing MycilaESPConnect...
+[mDNS] Service _cuelx-tally._udp registered on port 8990
+[Task] Socket.IO background task running on Core 0
+[Network] State: 1 -> 2
+[ETH] Cable connected (Link UP)
+[  3485][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+[  3492][E][NetworkUdp.cpp:312] parsePacket(): could not check for data in buffer length: 9
+E (8038) wifi:sta is connecting, return error
+[  3497][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (8053) wifi:sta is connecting, return error
+[ETH] IP Assigned (DHCP): 10.32.16.94
+[Network] PoE Ethernet active (10.32.16.94). Disabling Wi-Fi AP to eliminate multi-IP and reduce radio load.
+[TallyArbiter] Ensuring connection to server...
+[TallyArbiter] Connecting to 10.32.3.2:4455[TallyArbiter] Connecting to 10.32.3.2:4455
+[Time] Timezone applied: Europe/London (GMT0BST,M3.5.0/1,M10.5.0)
+[  4642][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+
+[Time] Timezone applied: Europe/London (GMT0BST,M3.5.0/1,M10.5.0)
+[TallyArbiter] Connected successfully.
+[  7067][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (11619) wifi:sta is connecting, return error
+[  7078][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (11630) wifi:sta is connecting, return error
+[  9492][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (14044) wifi:sta is connecting, return error
+[  9503][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (14056) wifi:sta is connecting, return error
+[ 11917][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (16470) wifi:sta is connecting, return error
+[ 11929][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (16481) wifi:sta is connecting, return error
+[ 14343][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (18896) wifi:sta is connecting, return error
+[ 14354][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (18907) wifi:sta is connecting, return error
+[ 16768][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (21321) wifi:sta is connecting, return error
+[ 16780][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (21333) wifi:sta is connecting, return error
+[ 19194][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (23747) wifi:sta is connecting, return error
+[ 19206][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (23758) wifi:sta is connecting, return error
+[ 21071][W][MycilaESPConnect_Lifecycle.cpp:126] loop(): [ESPCONNECT] Connection timeout and WiFi is still active: forcing disconnect...
+[ 21088][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[Network] State: 2 -> 3
+[Network] State: 3 -> 9
+
+assert failed: igmp_lookup_group /IDF/components/lwip/lwip/src/core/ipv4/igmp.c:274 (igmp_lookup_group: first group must be allsystems)
+
+
+Backtrace: 0x4037e495:0x3fcb79e0 0x4037e45d:0x3fcb7a00 0x40385506:0x3fcb7a20 0x42079989:0x3fcb7b60 0x42079ae0:0x3fcb7b80 0x420ac816:0x3fcb7ba0 0x420aca20:0x3fcb7be0 0x4206ed19:0x3fcb7c00 0x420acb9d:0x3fcb7c20 0x420ac0c4:0x3fcb7c60 0x420ac31d:0x3fcb7ca0 0x4037f415:0x3fcb7cd0
+
+
+
+
+ELF file SHA256: 5708db30c
+
+Rebooting...
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0xc (RTC_SW_CPU_RST),boot:0x18 (SPI_FAST_FLASH_BOOT)
+Saved PC:0x4037e649
+SPIWP:0xee
+mode:DIO, clock div:1
+load:0x3fce2820,len:0x10cc
+load:0x403c8700,len:0xc2c
+load:0x403cb700,len:0x30c0
+entry 0x403c88b8
+==========================================
+M5AtomS3R + AtomPoE Cue & Tally Controller
+==========================================
+[Display] Double buffer (M5Canvas) allocated successfully: 32KB.
+[Display] Free PSRAM: 8155 KB, Free Heap: 8442 KB
+[Time] Timezone applied: Europe/London (GMT0BST,M3.5.0/1,M10.5.0)
+[Power] Low-Power Mode Applied: CPU @ 80 MHz (APB: 80 MHz). BT radio OFF.
+[ETH] Initializing W5500 SPI (SCK:5, CS:6, MISO:7, MOSI:8)...
+[Network] Configuring DHCP (Automatic IP Assignment)
+[ETH] Hardware driver started
+[ETH] W5500 SPI Ethernet initialized. Waiting for PoE link / DHCP...
+[WebServer] HTTP Server started listening on port 80
+[Network] Initializing MycilaESPConnect...
+[mDNS] Service _cuelx-tally._udp registered on port 8990
+[Task] Socket.IO background task running on Core 0
+[Network] State: 1 -> 2
+[ETH] Cable connected (Link UP)
+[  3484][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (8041) wifi:sta is connecting, return error
+[  3499][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (8059) wifi:sta is connecting, return error
+[ETH] IP Assigned (DHCP): 10.32.16.94
+[Network] PoE Ethernet active (10.32.16.94). Disabling Wi-Fi AP to eliminate multi-IP and reduce radio load.
+[TallyArbiter] Connecting to 10.32.3.2:4455
+[Time] Timezone applied: Europe/London (GMT0BST,M3.5.0/1,M10.5.0)
+[  4701][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[TallyArbiter] Ensuring connection to server...
+[TallyArbiter] Connecting to 10.32.3.2:4455
+[Time] Timezone applied: Europe/London (GMT0BST,M3.5.0/1,M10.5.0)
+[TallyArbiter] Connected successfully.
+[  7125][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (11679) wifi:sta is connecting, return error
+[  7137][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (11690) wifi:sta is connecting, return error
+[  9551][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (14105) wifi:sta is connecting, return error
+[  9562][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (14116) wifi:sta is connecting, return error
+[ 11976][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (16530) wifi:sta is connecting, return error
+[ 11988][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (16541) wifi:sta is connecting, return error
+[ 14402][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (18956) wifi:sta is connecting, return error
+[ 14414][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (18967) wifi:sta is connecting, return error
+[ 16827][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (21382) wifi:sta is connecting, return error
+[ 16839][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (21393) wifi:sta is connecting, return error
+[ 19253][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (23807) wifi:sta is connecting, return error
+[ 19265][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (23819) wifi:sta is connecting, return error
+[ 21071][W][MycilaESPConnect_Lifecycle.cpp:126] loop(): [ESPCONNECT] Connection timeout and WiFi is still active: forcing disconnect...
+[ 21088][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+[Network] State: 2 -> 3
+[Network] State: 3 -> 9
+[Network] State: 9 -> 10
+[Power] Inactive for 60s in standby/off. Backlight auto-dimmed to 10% to minimize PoE heating.
+[Network] State: 10 -> 12
+[Network] Portal timeout reached; auto-restart prevented. Continuing normal operation.
+[201142][W][MycilaESPConnect_Lifecycle.cpp:184] loop(): [ESPCONNECT] Portal timeout!
+[Network] State: 12 -> 1
+[Network] State: 1 -> 2
+[203610][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (208164) wifi:sta is connecting, return error
+[203621][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (208175) wifi:sta is connecting, return error
+[206035][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (210590) wifi:sta is connecting, return error
+[206047][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (210601) wifi:sta is connecting, return error
+[208461][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (213015) wifi:sta is connecting, return error
+[208473][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (213027) wifi:sta is connecting, return error
+[210886][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (215441) wifi:sta is connecting, return error
+[210898][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (215452) wifi:sta is connecting, return error
+[213312][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 201 - NO_AP_FOUND
+E (217867) wifi:sta is connecting, return error
+[213324][W][STA.cpp:145] _onStaArduinoEvent(): Reason: 36 - STA_LEAVING
+E (217878) wifi:sta is connecting, return error

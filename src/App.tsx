@@ -152,6 +152,12 @@ export default function App() {
       blue: false,
       white: false
     },
+    vmixHost: '192.168.1.100',
+    vmixPort: 8099,
+    vmixInput: 1,
+    vmixLabel: 'CAM 1',
+    vmixBtnAction: 0,
+    vmixTallyState: 0,
     imuRotation: 0
   });
 
@@ -285,6 +291,21 @@ export default function App() {
         decoded: `OSC UDP (Port ${simState.oscPort}): ${addr} [i: ${live ? 1 : 0}]`,
         timestamp: timeStr,
         channel: 1,
+        live
+      });
+      return;
+    }
+
+    if (simState.operatingMode === 'vMix') {
+      const cmd = simState.vmixBtnAction === 2
+        ? `FUNCTION ActiveInput Input=${simState.vmixInput}\r\n`
+        : `FUNCTION PreviewInput Input=${simState.vmixInput}\r\n`;
+      const hex = Array.from(cmd).slice(0, 18).map(c => c.charCodeAt(0).toString(16).padStart(2, '0').toUpperCase()).join(' ');
+      setLastTslPacket({
+        hex,
+        decoded: `vMix TCP API (${simState.vmixHost}:${simState.vmixPort}): ${cmd.trim()}`,
+        timestamp: timeStr,
+        channel: simState.vmixInput,
         live
       });
       return;
@@ -515,7 +536,7 @@ export default function App() {
             <BookOpen className="w-3.5 h-3.5 text-sky-400" />
             <span>User Manual &amp; Docs</span>
             <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-sky-950 text-sky-300 border border-sky-800">
-              13 Modes
+              14 Modes
             </span>
           </button>
         </div>

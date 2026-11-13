@@ -62,6 +62,7 @@
 #endif
 
 #include <SPI.h>
+#include <Wire.h>
 #include <ETH.h>
 #include <WiFi.h>
 #include <AsyncTCP.h>
@@ -142,6 +143,7 @@ bool LAST_MSG                 = false;
 // - "OSC_CueLight": OSC Cue Light for iOS (RSMCK protocol: standby_ack, standby, go, off, banner)
 // - "Promptside": Promptside Theatrical Cue Light Outstation (promptside.co)
 // - "MSC_RTP_MIDI": MIDI Show Control (MSC) over rtpMIDI (RP-002)
+// - "vMix": vMix Live Production Switcher Tally (TCP API port 8099)
 String operatingMode    = "TP";           // Default mode
 String pairingGroup     = "Studio-1";     // mDNS / DNS-SD pairing group
 String pairedTargetIP   = "";             // Target IP of paired unit in P2P mode
@@ -269,6 +271,16 @@ float  env_humidity           = 0.0f;            // %RH
 float  env_pressure           = 0.0f;            // hPa
 unsigned long lastEnvReadTime = 0;
 
+// vMix Live Production Tally Configuration & State (TCP API Port 8099)
+String vmix_host              = "192.168.1.100"; // vMix workstation IP / hostname
+int    vmix_port              = 8099;            // Standard vMix TCP API port
+int    vmix_input             = 1;               // 1-based vMix Input number
+String vmix_label             = "";              // Optional override label displayed on LCD
+int    vmix_btn_action        = 0;               // 0=Switch Screen (Safe), 1=PreviewInput, 2=ActiveInput
+int    vmix_tally_val         = 0;               // 0=Off, 1=Program (Red), 2=Preview (Green)
+WiFiClient vmixClient;
+String vmixRxBuffer           = "";
+
 // Wi-Fi Precedence State (disable Wi-Fi when PoE Ethernet is active)
 bool   wifiDisabledForEth   = false;
 unsigned long lastEthCheckTime = 0;
@@ -277,8 +289,9 @@ unsigned long lastEthCheckTime = 0;
 AsyncServer* tslTcpServer   = nullptr;
 
 // IMU Screen Auto-Rotation State (Requirement 5)
-uint8_t currentRotation      = 0;
-uint8_t pendingRotation      = 0;
+// Swapped so rotation 2 = Upright (Grove/PoE ports at bottom), rotation 0 = Inverted 180
+uint8_t currentRotation      = 2;
+uint8_t pendingRotation      = 2;
 unsigned long pendingRotTime = 0;
 
 // Network IP Configuration (DHCP vs Static IP)
@@ -330,12 +343,32 @@ bool doubleBufferEnabled = false;
 // Multi-Core & Thread-Safety Variables (FreeRTOS)
 volatile bool tallyStateChanged = false;
 volatile bool flashRequested = false;
+volatile bool needNetworkServicesInit = false;
+volatile bool needNmosDiscovery = false;
+volatile bool ethPrecedenceCheckDue = false;
+volatile bool taConnectRequested = false;
+volatile bool taDisconnectRequested = false;
+volatile bool taSocketConnected = false;
+volatile bool vmixConnected = false;
+volatile bool vmixReconnectRequested = false;
+volatile bool vmixButtonActionRequested = false;
+bool espConnectStarted = false;
+bool servicesStarted = false;
+bool udpStarted = false;
+unsigned long bootStartTimeMs = 0;
+SemaphoreHandle_t taStateMutex = NULL;
 TaskHandle_t socketTaskHandle = NULL;
 
 // Forward Declarations
+uint16_t getActiveListenPort();
+const char* getActiveRoleTag();
+int getPhysicalRotationDegrees();
+void startNetworkServices();
+void startEspConnectFallback();
 void applyPowerManagementConfig();
 void wakeDisplayFromDim();
 void socketTask(void *pvParameters);
+void handleVmixSocketLoop();
 void sendtally(int channel, bool live);
 void sendCueAck();
 void sendNMOSTally(bool live);
@@ -345,6 +378,7 @@ void handleP2PHeartbeatCheck();
 void sendMidiButtonAction(bool pressed);
 void readAtomEnvSensor();
 void processIncomingTSL();
+void processSingleUdpPacket(int packetSize);
 void processRTPMidiPacket(uint8_t* buf, int len, IPAddress remoteIP, uint16_t remotePort);
 void processOSCPacket(uint8_t* buf, int len);
 void processTSL31Packet(uint8_t* buf, int len);
@@ -432,8 +466,18 @@ bool isMSCRTPMidi() {
   return operatingMode == "MSC_RTP_MIDI";
 }
 
+bool isVmix() {
+  return operatingMode == "vMix";
+}
+
 bool usesTallyArbiter() {
   return operatingMode == "TP" || operatingMode == "Presenter";
+}
+
+int getPhysicalRotationDegrees() {
+  if (currentRotation == 2) return 0;
+  if (currentRotation == 0) return 180;
+  return (int)(currentRotation * 90);
 }
 
 // ==========================================
@@ -512,7 +556,7 @@ void applyTimezoneConfig() {
 
 // Requirement 6: Send User-Configured MIDI Message on Hardware Button Action
 void sendMidiButtonAction(bool pressed) {
-  if (!networkConnected || midi_btn_type == 0) return;
+  if (!networkConnected || !udpStarted || midi_btn_type == 0) return;
 
   uint8_t ch = (midi_btn_channel >= 1 && midi_btn_channel <= 16) ? (midi_btn_channel - 1) : 0;
   uint8_t packet[8];
@@ -566,7 +610,7 @@ void sendMidiButtonAction(bool pressed) {
 
 // Requirement 7: P2P 0.25s (250ms) Heartbeat & 4-Missed Fault Detection
 void sendP2PPing() {
-  if (!networkConnected || !isP2PMode()) return;
+  if (!networkConnected || !udpStarted || !isP2PMode()) return;
   p2p_heartbeat_seq++;
   String pingStr = "CXPING," + pairingGroup + "," + String(p2p_heartbeat_seq) + "," + listenerDeviceName + "\n";
   IPAddress targetIP(255, 255, 255, 255);
@@ -579,7 +623,7 @@ void sendP2PPing() {
 }
 
 void sendP2PPong(uint32_t seq) {
-  if (!networkConnected || !isP2PMode()) return;
+  if (!networkConnected || !udpStarted || !isP2PMode()) return;
   String pongStr = "CXPONG," + pairingGroup + "," + String(seq) + "," + listenerDeviceName + "\n";
   IPAddress targetIP(255, 255, 255, 255);
   if (pairedTargetIP.length() > 0 && pairedTargetIP != "0.0.0.0") {
@@ -688,24 +732,89 @@ String getNetworkIPStr() {
   return "0.0.0.0";
 }
 
-// Requirement 4 & 10: Disable Wi-Fi AP when PoE Ethernet is connected
-// Eliminates multiple IP addresses and prevents AP broadcasting while preserving LwIP socket routing for Tally Arbiter
+uint16_t getActiveListenPort() {
+  if (isETCCueSystem()) return cuesystem_port;
+  if (isRTPMidi()) return rtpmidi_port;
+  if (isMSCRTPMidi()) return msc_rtpmidi_port;
+  if (isPromptside()) return promptside_port;
+  if (isOSC()) return osc_port;
+  if (isTSL31Listener()) return tsl31_port;
+  if (isTSL50Listener()) return tsl50_port;
+  if (isOSCCueLight()) return osccue_port;
+  return (uint16_t)atoi(tallyarbiter_TSLport);
+}
+
+const char* getActiveRoleTag() {
+  if (isPresenter()) return "presenter";
+  if (isTP()) return "tp";
+  if (isETCCueSystem()) return "cue";
+  if (isPromptside()) return "promptside";
+  if (isMSCRTPMidi()) return "msc";
+  if (isRTPMidi()) return "midi";
+  if (isOSC()) return "osc";
+  if (isTSL31Listener()) return "tsl31";
+  if (isTSL50Listener()) return "tsl50";
+  if (isOSCCueLight()) return "osccue";
+  if (isVmix()) return "vmix";
+  return "nmos";
+}
+
+void startEspConnectFallback() {
+  if (espConnectStarted || isEthernetActive() || ETH.linkUp()) return;
+  logger("[Network] Initializing MycilaESPConnect Wi-Fi fallback...", "info");
+  WiFi.mode(WIFI_STA);
+  espConnect.setAutoRestart(false);
+  espConnect.setBlocking(false);
+  espConnect.begin(listenerDeviceName.c_str(), listenerDeviceName.c_str());
+  espConnectStarted = true;
+}
+
+void startNetworkServices() {
+  if (!networkConnected || servicesStarted) return;
+  servicesStarted = true;
+
+  configTzTime(posix_time_zone_info.c_str(), daylightOffset_sec, ntpServer1, ntpServer2);
+
+  // Disable ArduinoOTA's internal mDNS responder so it doesn't collide with ESPmDNS on Core 0
+  ArduinoOTA.setMdnsEnabled(false);
+  ArduinoOTA.setHostname(listenerDeviceName.c_str());
+  ArduinoOTA.setPassword("tallyarbiter");
+  ArduinoOTA.begin();
+
+  if (MDNS.begin(mdnsdotlocalurl.c_str())) {
+    MDNS.addService("CueLX", "tcp", 80);
+    MDNS.addService("http", "tcp", 80);
+    uint16_t mDnsPort = getActiveListenPort();
+    MDNS.addService("cuelx-tally", "udp", mDnsPort);
+    MDNS.addServiceTxt("cuelx-tally", "udp", "role", getActiveRoleTag());
+    MDNS.addServiceTxt("cuelx-tally", "udp", "mode", operatingMode.c_str());
+    MDNS.addServiceTxt("cuelx-tally", "udp", "group", pairingGroup.c_str());
+    MDNS.addServiceTxt("cuelx-tally", "udp", "name", listenerDeviceName.c_str());
+    logger(String("[mDNS] Service _cuelx-tally._udp registered on port ") + String(mDnsPort), "info");
+  }
+}
+
+// Requirement 4 & 10: Stop ESPConnect & Wi-Fi radio cleanly when PoE Ethernet is active
+// Calls ETH.setDefault() so LwIP routes Tally Arbiter & HTTP sockets cleanly over Ethernet without IGMP/Wi-Fi state churn
 void checkEthernetWifiPrecedence() {
   if (isEthernetActive()) {
     if (!wifiDisabledForEth) {
       wifiDisabledForEth = true;
-      logger("[Network] PoE Ethernet active (" + ETH.localIP().toString() + "). Disabling Wi-Fi AP to eliminate multi-IP and reduce radio load.", "info");
-      WiFi.disconnect(false);
+      ETH.setDefault();
+      if (espConnectStarted) {
+        espConnect.end();
+        espConnectStarted = false;
+      }
+      logger("[Network] PoE Ethernet active (" + ETH.localIP().toString() + "). ETH default route set; Wi-Fi radio powered down.", "info");
       WiFi.enableAP(false);
+      WiFi.disconnect(false);
+      WiFi.mode(WIFI_OFF);
     }
-  } else {
+  } else if (!ETH.linkUp()) {
     if (wifiDisabledForEth) {
       wifiDisabledForEth = false;
       logger("[Network] PoE Ethernet disconnected. Re-enabling Wi-Fi fallback.", "info");
-      WiFi.enableAP(true);
-      espConnect.setAutoRestart(false);
-      espConnect.setBlocking(false);
-      espConnect.begin(listenerDeviceName.c_str(), listenerDeviceName.c_str());
+      startEspConnectFallback();
     }
   }
 }
@@ -754,9 +863,8 @@ void setupTSLTcpServer(uint16_t port) {
 // TSL 3.1 UDP Packet Sender
 // ==========================================
 void sendtally(int channel, bool live) {
-  // CRITICAL: Guard against sending UDP when network is down
-  // Sending when offline causes ARP/socket timeouts and slows the main loop
-  if (!networkConnected) {
+  // CRITICAL: Guard against sending UDP when network or UDP socket is down
+  if (!networkConnected || !udpStarted) {
     return;
   }
 
@@ -822,7 +930,7 @@ void sendtally(int channel, bool live) {
 // ETC CueSystem Acknowledge Packet Sender
 // ==========================================
 void sendCueAck() {
-  if (!networkConnected) return;
+  if (!networkConnected || !udpStarted) return;
   cuesystem_ack_active = true;
   String ackMsg = String("CS,") + String(cuesystem_channel) + ",ACK\n";
   IPAddress cueIP;
@@ -841,7 +949,7 @@ void sendCueAck() {
 // NMOS IS-07 Event & Tally Sender
 // ==========================================
 void sendNMOSTally(bool live) {
-  if (!networkConnected) return;
+  if (!networkConnected || !udpStarted) return;
   nmos_is_on_air = live;
   JSONVar msg;
   msg["message_type"] = "state";
@@ -858,7 +966,7 @@ void sendNMOSTally(bool live) {
   }
   udp.write((const uint8_t*)jsonStr.c_str(), jsonStr.length());
   udp.endPacket();
-  logger(String("[NMOS IS-07] Emitted event on ") + nmos_event_topic + ": " + (live ? "TRUE (On-Air)" : "FALSE (Standby)"), "info");
+  logger(String("[NMOS IS-07] Emitted event on ") + nmos_program_topic + ": " + (live ? "TRUE (On-Air)" : "FALSE (Standby)"), "info");
   renderScreen();
 }
 
@@ -866,12 +974,23 @@ void sendNMOSTally(bool live) {
 // Incoming Packet Receiver (TSL, ETC, NMOS, rtpMIDI, OSC)
 // ==========================================
 void processIncomingTSL() {
-  int packetSize = udp.parsePacket();
-  if (packetSize > 0) {
-    byte packetBuffer[512];
-    int len = udp.read(packetBuffer, sizeof(packetBuffer) - 1);
-    if (len <= 0) return;
-    packetBuffer[len] = '\0';
+  if (!networkConnected || !udpStarted) return;
+  for (int pkt = 0; pkt < 8; pkt++) {
+    int packetSize = udp.parsePacket();
+    if (packetSize <= 0) break;
+    processSingleUdpPacket(packetSize);
+  }
+}
+
+void processSingleUdpPacket(int packetSize) {
+  if (packetSize <= 0) return;
+  byte packetBuffer[512];
+  int len = udp.read(packetBuffer, sizeof(packetBuffer) - 1);
+  while (udp.available()) {
+    udp.read(); // Flush excess bytes on busy broadcast networks
+  }
+  if (len <= 0) return;
+  packetBuffer[len] = '\0';
 
     // P2P Heartbeat Ping / Pong Packet Detection (Requirement 7)
     String p2pHeader = String((char*)packetBuffer);
@@ -1081,7 +1200,7 @@ void processIncomingTSL() {
       }
     }
   }
-}
+
 
 // ==========================================
 // rtpMIDI / AppleMIDI Session & Data Parser
@@ -1358,7 +1477,7 @@ void processTSL31Packet(uint8_t* buf, int len) {
       actualType = "";
       actualColor = "";
     }
-    renderScreen();
+    tallyStateChanged = true;
   }
 }
 
@@ -1406,7 +1525,7 @@ void processTSL50Packet(uint8_t* buf, int len) {
       actualType = "";
       actualColor = "";
     }
-    renderScreen();
+    tallyStateChanged = true;
   }
 }
 
@@ -1482,7 +1601,7 @@ void processOSCCueLightPacket(uint8_t* buf, int len, IPAddress remoteIP, uint16_
 }
 
 void sendOSCCueLightState(String stateName) {
-  if (!networkConnected) return;
+  if (!networkConnected || !udpStarted) return;
   String addr = "/cuelight/state/" + osccue_station_id + "/" + stateName;
   int addrLen = addr.length();
   int pad = (4 - (addrLen % 4)) % 4;
@@ -1590,7 +1709,7 @@ void processPromptsidePacket(uint8_t* buf, int len, IPAddress remoteIP, uint16_t
 }
 
 void sendPromptsideAck() {
-  if (!networkConnected) return;
+  if (!networkConnected || !udpStarted) return;
   String addr = "/promptside/channel/" + promptside_channel + "/ack";
   int addrLen = addr.length();
   int pad = (4 - (addrLen % 4)) % 4;
@@ -1722,6 +1841,19 @@ void processMSCRTPMidiPacket(uint8_t* buf, int len, IPAddress remoteIP, uint16_t
 // Double-Buffered Screen Rendering
 // ==========================================
 void renderScreen() {
+  // Thread-safe snapshot of shared Tally Arbiter / vMix state updated on Core 0
+  String snapActualType = actualType;
+  String snapActualColor = actualColor;
+  String snapDeviceName = DeviceName;
+  int snapVmixTallyVal = vmix_tally_val;
+  if (taStateMutex != NULL && xSemaphoreTake(taStateMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+    snapActualType = actualType;
+    snapActualColor = actualColor;
+    snapDeviceName = DeviceName;
+    snapVmixTallyVal = vmix_tally_val;
+    xSemaphoreGive(taStateMutex);
+  }
+
   // Compute Background Color and Text Color for BOTH Screen 0 and Screen 1 (Diagnostics)
   uint16_t bgColor = TFT_BLACK;
   uint16_t textColor = TFT_WHITE;
@@ -1734,6 +1866,20 @@ void renderScreen() {
     bgColor = flashPhase ? TFT_YELLOW : TFT_BLACK;
     textColor = flashPhase ? TFT_BLACK : TFT_YELLOW;
     statusLabel = "DISCONNECTED";
+  } else if (isVmix()) {
+    if (snapVmixTallyVal == 1) {
+      bgColor = TFT_RED;
+      textColor = TFT_WHITE;
+      statusLabel = "PROGRAM";
+    } else if (snapVmixTallyVal == 2) {
+      bgColor = TFT_GREEN;
+      textColor = TFT_BLACK;
+      statusLabel = "PREVIEW";
+    } else {
+      bgColor = TFT_BLACK;
+      textColor = TFT_WHITE;
+      statusLabel = vmixConnected ? "STANDBY" : "vMix WAIT";
+    }
   } else if (isPromptside()) {
     // 0.2 Promptside Theatrical Cue Light (Requirement 2)
     if (promptside_state == "standby_ack") {
@@ -1762,7 +1908,7 @@ void renderScreen() {
       textColor = TFT_BLACK;
       statusLabel = String("GO ") + (msc_current_cue.length() > 0 ? msc_current_cue : "");
     } else if (msc_state == "standby") {
-      if (actualType == "\"flashred\"") {
+      if (snapActualType == "\"flashred\"") {
         bgColor = flashPhase ? TFT_RED : TFT_BLACK;
         textColor = flashPhase ? TFT_WHITE : TFT_RED;
         statusLabel = String("STANDBY+ ") + (msc_current_cue.length() > 0 ? msc_current_cue : "");
@@ -1801,15 +1947,15 @@ void renderScreen() {
       statusLabel = "OFF";
     }
   } else if (isTSL31Listener()) {
-    if (actualType == "\"program\"") {
+    if (snapActualType == "\"program\"") {
       bgColor = TFT_RED;
       textColor = TFT_WHITE;
       statusLabel = "PROGRAM";
-    } else if (actualType == "\"preview\"") {
+    } else if (snapActualType == "\"preview\"") {
       bgColor = TFT_GREEN;
       textColor = TFT_BLACK;
       statusLabel = "PREVIEW";
-    } else if (actualType == "\"aux\"") {
+    } else if (snapActualType == "\"aux\"") {
       bgColor = TFT_ORANGE;
       textColor = TFT_BLACK;
       statusLabel = "AUX";
@@ -1819,19 +1965,19 @@ void renderScreen() {
       statusLabel = "STANDBY";
     }
   } else if (isTSL50Listener()) {
-    if (actualType == "\"program\"") {
+    if (snapActualType == "\"program\"") {
       bgColor = TFT_RED;
       textColor = TFT_WHITE;
       statusLabel = "PROGRAM";
-    } else if (actualType == "\"preview\"") {
+    } else if (snapActualType == "\"preview\"") {
       bgColor = TFT_GREEN;
       textColor = TFT_BLACK;
       statusLabel = "PREVIEW";
-    } else if (actualType == "\"aux\"") {
+    } else if (snapActualType == "\"aux\"") {
       bgColor = TFT_ORANGE;
       textColor = TFT_BLACK;
       statusLabel = "AUX";
-    } else if (actualType == "\"blue\"") {
+    } else if (snapActualType == "\"blue\"") {
       bgColor = TFT_BLUE;
       textColor = TFT_WHITE;
       statusLabel = "BLUE";
@@ -1841,7 +1987,7 @@ void renderScreen() {
       statusLabel = "STANDBY";
     }
   } else if (isETCCueSystem()) {
-    if (actualType == "\"standby\"") {
+    if (snapActualType == "\"standby\"") {
       if (!cuesystem_ack_active) {
         bgColor = flashPhase ? TFT_RED : TFT_BLACK;
         textColor = flashPhase ? TFT_WHITE : TFT_RED;
@@ -1851,7 +1997,7 @@ void renderScreen() {
         textColor = TFT_WHITE;
         statusLabel = "ACKNOWLEDGED";
       }
-    } else if (actualType == "\"program\"") {
+    } else if (snapActualType == "\"program\"") {
       bgColor = TFT_GREEN;
       textColor = TFT_BLACK;
       statusLabel = "GO";
@@ -1860,36 +2006,36 @@ void renderScreen() {
       textColor = TFT_WHITE;
       statusLabel = "CUE OFF";
     }
-  } else if (actualType == "\"flashred\"") {
+  } else if (snapActualType == "\"flashred\"") {
     bgColor = flashPhase ? TFT_RED : TFT_BLACK;
     textColor = flashPhase ? TFT_WHITE : TFT_RED;
     statusLabel = "FLASH RED";
-  } else if (actualType == "\"program\"") {
+  } else if (snapActualType == "\"program\"") {
     bgColor = TFT_RED;
     textColor = TFT_WHITE;
     statusLabel = isNMOSIS07() ? "ON-AIR" : (isRTPMidi() || isOSC() ? "RED" : "PROGRAM");
-  } else if (actualType == "\"preview\"") {
+  } else if (snapActualType == "\"preview\"") {
     bgColor = TFT_GREEN;
     textColor = TFT_BLACK;
     statusLabel = isRTPMidi() || isOSC() ? "GREEN" : "PREVIEW";
-  } else if (actualType == "\"yellow\"") {
+  } else if (snapActualType == "\"yellow\"") {
     bgColor = TFT_YELLOW;
     textColor = TFT_BLACK;
     statusLabel = "YELLOW";
-  } else if (actualType == "\"blue\"") {
+  } else if (snapActualType == "\"blue\"") {
     bgColor = TFT_BLUE;
     textColor = TFT_WHITE;
     statusLabel = "BLUE";
-  } else if (actualType == "\"white\"") {
+  } else if (snapActualType == "\"white\"") {
     bgColor = TFT_WHITE;
     textColor = TFT_BLACK;
     statusLabel = "WHITE";
-  } else if (actualType == "\"aux\"") {
+  } else if (snapActualType == "\"aux\"") {
     bgColor = TFT_ORANGE;
     textColor = TFT_BLACK;
     statusLabel = "AUX";
-  } else if (actualColor.length() > 0 && actualColor != "invalid") {
-    String hexstring = actualColor;
+  } else if (snapActualColor.length() > 0 && snapActualColor != "invalid") {
+    String hexstring = snapActualColor;
     hexstring.replace("#", "");
     long number = (long)strtol(hexstring.c_str(), NULL, 16);
     int r = (number >> 16) & 0xFF;
@@ -1897,7 +2043,7 @@ void renderScreen() {
     int b = number & 0xFF;
     bgColor = M5.Display.color565(r, g, b);
     textColor = (r + g + b > 380) ? TFT_BLACK : TFT_WHITE;
-    statusLabel = actualType;
+    statusLabel = snapActualType;
     statusLabel.replace("\"", "");
     statusLabel.toUpperCase();
   }
@@ -1958,7 +2104,7 @@ void renderScreen() {
       }
 
       // Device Name / Centre Display Text
-      String displayName = DeviceName;
+      String displayName = snapDeviceName;
       if (isPromptside()) {
         displayName = promptside_cue_text.length() > 0 ? promptside_cue_text : (promptside_state == "go" ? "GO!" : (promptside_state == "standby_ack" ? "STANDBY" : (String("CH ") + promptside_channel)));
       } else if (isMSCRTPMidi()) {
@@ -1971,13 +2117,17 @@ void renderScreen() {
         displayName = tsl50_name;
       } else if (isOSCCueLight()) {
         displayName = osccue_message.length() > 0 ? osccue_message : (osccue_state == "go" ? "GO!" : (osccue_state == "standby_ack" ? "STANDBY" : (osccue_state == "standby" ? "STANDBY" : "OFF")));
+      } else if (isVmix()) {
+        if (vmix_label.length() > 0) displayName = vmix_label;
+        else if (snapDeviceName.length() > 0 && snapDeviceName != "Unassigned") displayName = snapDeviceName;
+        else displayName = String("vMix IN ") + String(vmix_input);
       }
 
       g->setTextSize(2);
       g->setTextColor(textColor, bgColor);
       int textWidth = g->textWidth(displayName.c_str());
 
-      if (isTSL31Listener() || isTSL50Listener() || isMSCRTPMidi() || isPromptside()) {
+      if (isTSL31Listener() || isTSL50Listener() || isMSCRTPMidi() || isPromptside() || isVmix()) {
         g->setTextDatum(middle_center);
         if (textWidth > 116) {
           int scrollRange = textWidth + 60;
@@ -2026,11 +2176,14 @@ void renderScreen() {
       else if (operatingMode == "TSL_31") roleBadge = String("[TSL3.1 ") + tsl31_transport + "]";
       else if (operatingMode == "TSL_50") roleBadge = String("[TSL5.0 ") + tsl50_transport + "]";
       else if (operatingMode == "OSC_CueLight") roleBadge = "[OSC CUE-LX]";
+      else if (operatingMode == "vMix") roleBadge = "[vMix]";
       g->print(roleBadge);
 
       g->setCursor(68, 88);
       if (isPromptside()) {
         g->print("Ch: " + promptside_channel);
+      } else if (isVmix()) {
+        g->print("In:" + String(vmix_input) + (vmixConnected ? " OK" : " --"));
       } else if (isMSCRTPMidi()) {
         g->print("Dev:" + String(msc_device_id));
       } else if (isETCCueSystem()) {
@@ -2055,7 +2208,7 @@ void renderScreen() {
           g->print("Grp: " + pairingGroup.substring(0, 5));
         }
       } else {
-        g->print(socket.isConnected() ? "TA: Online" : "TA: Offline");
+        g->print(taSocketConnected ? "TA: Online" : "TA: Offline");
       }
 
       g->setCursor(4, 98);
@@ -2067,6 +2220,10 @@ void renderScreen() {
           g->setTextColor(textColor, bgColor);
           g->print("Ack: PENDING");
         }
+      } else if (isVmix()) {
+        g->setTextColor(textColor, bgColor);
+        String vmixLine = vmixConnected ? (String("vMix: ") + vmix_host) : (String("Conn ") + vmix_host);
+        g->print(vmixLine.substring(0, 20));
       } else if (isMSCRTPMidi()) {
         g->setTextColor(textColor, bgColor);
         g->print(String("Cmd: ") + msc_last_command + " " + msc_current_cue);
@@ -2215,9 +2372,16 @@ void renderScreen() {
         g->print(osccue_station_id);
         g->print(" :");
         g->println(osccue_port);
+      } else if (isVmix()) {
+        g->print("vMix: ");
+        g->print(vmix_host);
+        g->print(":");
+        g->print(vmix_port);
+        g->print(" I");
+        g->println(vmix_input);
       } else {
         g->print("TA:   ");
-        g->println(socket.isConnected() ? "Connected" : "Disconnected");
+        g->println(taSocketConnected ? "Connected" : "Disconnected");
       }
 
       // Requirement 9: AtomENV Sensor Live Telemetry
@@ -2246,7 +2410,7 @@ void renderScreen() {
 
       g->setCursor(4, 80);
       g->print("Rot:  ");
-      g->print(currentRotation * 90);
+      g->print(getPhysicalRotationDegrees());
       g->println(" deg (IMU Auto)");
 
       g->setCursor(4, 92);
@@ -2282,19 +2446,16 @@ void renderScreen() {
 
 void evaluateMode() {
   tallyStateChanged = true;
-  if (xPortGetCoreID() == 1) {
-    renderScreen();
-  }
 }
 
 void showSettings() {
   currentScreen = 1;
-  renderScreen();
+  tallyStateChanged = true;
 }
 
 void showDeviceInfo() {
   currentScreen = 0;
-  renderScreen();
+  tallyStateChanged = true;
 }
 
 // Power & Thermal Functions (Item 10)
@@ -2380,6 +2541,7 @@ void setupWebServer() {
     else if (operatingMode == "NMOS_IS07") html += F("<span class='badge badge-cyan'>NMOS IS-07 Event & Tally</span>");
     else if (operatingMode == "Promptside") html += F("<span class='badge badge-purple'>Promptside Cue Light</span>");
     else if (operatingMode == "MSC_RTP_MIDI") html += F("<span class='badge badge-blue'>MSC over rtpMIDI</span>");
+    else if (operatingMode == "vMix") html += F("<span class='badge badge-cyan'>vMix Tally (TCP 8099)</span>");
     html += F("</p><p style='margin:4px 0;'>Network: <strong>");
     html += getNetworkModeStr();
     html += F(" (");
@@ -2442,6 +2604,9 @@ void setupWebServer() {
               "<option value='OSC_CueLight'");
     if (operatingMode == "OSC_CueLight") html += F(" selected");
     html += F(">OSC Cue Light (RSMCK iOS Protocol - Port 53000)</option>"
+              "<option value='vMix'");
+    if (operatingMode == "vMix") html += F(" selected");
+    html += F(">vMix Tally (TCP API Port 8099)</option>"
               "</select>"
 
               // Requirement 1 & 4 & 9: Timezone & Global Peripherals
@@ -2836,6 +3001,34 @@ void setupWebServer() {
               "<div class='hint'>Matches /cuelight/[station]/standby_ack (flashing red with button ACK return), /standby (solid red), /go (green), /off, and /banner.</div>"
               "</div>"
 
+              // Section: vMix Live Production Tally (TCP API Port 8099)
+              "<div id='sec-vmix' class='section-box'>"
+              "<h2>vMix Live Production Tally (TCP API)</h2>"
+              "<div class='grid-2'>"
+              "<div><label>vMix Workstation Host / IP</label><input type='text' name='vmix_host' value='");
+    html += vmix_host;
+    html += F("' placeholder='192.168.1.100'></div>"
+              "<div><label>vMix TCP API Port (Default: 8099)</label><input type='number' name='vmix_port' value='");
+    html += String(vmix_port);
+    html += F("'></div></div>"
+              "<div class='grid-2'>"
+              "<div><label>vMix Input Number (1 - 999)</label><input type='number' name='vmix_input' min='1' max='999' value='");
+    html += String(vmix_input);
+    html += F("'></div>"
+              "<div><label>Custom Display Label (Optional)</label><input type='text' name='vmix_label' value='");
+    html += vmix_label;
+    html += F("' placeholder='e.g. CAM 1'></div></div>"
+              "<div><label>Screen Button Action</label><select name='vmix_btn'>"
+              "<option value='0'");
+    if (vmix_btn_action == 0) html += F(" selected");
+    html += F(">Switch Diagnostics Screen (Safe Default)</option><option value='1'");
+    if (vmix_btn_action == 1) html += F(" selected");
+    html += F(">Send Input to Preview (FUNCTION PreviewInput)</option><option value='2'");
+    if (vmix_btn_action == 2) html += F(" selected");
+    html += F(">Cut Input to Program (FUNCTION ActiveInput)</option></select></div>"
+              "<div class='hint'>Subscribes natively to vMix TCP API (SUBSCRIBE TALLY on port 8099). Red = Program (1), Green = Preview (2), Black = Off (0).</div>"
+              "</div>"
+
               "<button type='submit' class='btn-save'>Save Settings & Apply</button>"
               "</form></div>"
 
@@ -2871,6 +3064,7 @@ void setupWebServer() {
               "  document.getElementById('sec-tsl31').style.display = (m==='TSL_31') ? 'block' : 'none';"
               "  document.getElementById('sec-tsl50').style.display = (m==='TSL_50') ? 'block' : 'none';"
               "  document.getElementById('sec-osccue').style.display = (m==='OSC_CueLight') ? 'block' : 'none';"
+              "  document.getElementById('sec-vmix').style.display = (m==='vMix') ? 'block' : 'none';"
               "}"
               "updateModeUI();"
               "toggleCustomTZ();"
@@ -2942,7 +3136,7 @@ void setupWebServer() {
     obj["oscPort"] = osc_port;
     obj["oscPrefix"] = osc_prefix;
     obj["oscMsg"] = osc_custom_message;
-    obj["rotation"] = (int)(currentRotation * 90);
+    obj["rotation"] = getPhysicalRotationDegrees();
     obj["pairingGroup"] = pairingGroup;
     obj["pairedTargetIP"] = pairedTargetIP;
     obj["pairedTargetName"] = pairedTargetName;
@@ -2956,6 +3150,14 @@ void setupWebServer() {
     obj["isTSL31"] = isTSL31Listener();
     obj["isTSL50"] = isTSL50Listener();
     obj["isOSCCueLight"] = isOSCCueLight();
+    obj["isVmix"] = isVmix();
+    obj["vmixHost"] = vmix_host;
+    obj["vmixPort"] = vmix_port;
+    obj["vmixInput"] = vmix_input;
+    obj["vmixLabel"] = vmix_label;
+    obj["vmixBtnAction"] = vmix_btn_action;
+    obj["vmixConnected"] = vmixConnected;
+    obj["vmixTallyState"] = vmix_tally_val;
     obj["nmosAutoDisc"] = nmos_auto_discover;
     obj["tsl31Port"] = tsl31_port;
     obj["tsl31Transport"] = tsl31_transport;
@@ -3006,19 +3208,26 @@ void setupWebServer() {
     obj["port"] = tallyarbiter_port;
     obj["tslPort"] = tallyarbiter_TSLport;
     obj["listenerName"] = listenerDeviceName;
-    obj["deviceId"] = DeviceId;
-    obj["deviceName"] = DeviceName;
+    if (taStateMutex != NULL && xSemaphoreTake(taStateMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+      obj["deviceId"] = DeviceId;
+      obj["deviceName"] = DeviceName;
+      obj["actualType"] = actualType;
+      obj["actualColor"] = actualColor;
+      xSemaphoreGive(taStateMutex);
+    } else {
+      obj["deviceId"] = DeviceId;
+      obj["deviceName"] = DeviceName;
+      obj["actualType"] = actualType;
+      obj["actualColor"] = actualColor;
+    }
     obj["doubleBuffer"] = doubleBufferEnabled;
-    obj["actualType"] = actualType;
-    obj["actualColor"] = actualColor;
     obj["mode"] = isEthernetActive() ? "ETH" : "WIFI";
     obj["ip"] = getNetworkIPStr();
     request->send(200, "application/json", JSON.stringify(obj));
   });
 
-  // REST API: GET /api/env - AtomENV Sensor live reading (Requirement 9)
+  // REST API: GET /api/env - AtomENV Sensor cached reading (Requirement 9)
   server.on("/api/env", HTTP_GET, [](AsyncWebServerRequest *request) {
-    readAtomEnvSensor();
     JSONVar obj;
     obj["enabled"] = env_sensor_enabled;
     obj["detected"] = env_sensor_detected;
@@ -3075,7 +3284,7 @@ void setupWebServer() {
                      "<div class='card'>"
                      "<h3>Table of Contents</h3>"
                      "<ol style='margin:0;padding-left:20px;font-size:14px;'>"
-                     "<li><a href='#modes'>13 Supported Operating Modes & Software Setup</a></li>"
+                     "<li><a href='#modes'>14 Supported Operating Modes & Software Setup</a></li>"
                      "<li><a href='#p2p'>Standalone P2P Heartbeat & Fault Alarm (0.25s)</a></li>"
                      "<li><a href='#midi-msc'>rtpMIDI, MSC (RP-002) & Return Button Feedback</a></li>"
                      "<li><a href='#promptside'>Promptside Theatrical System (promptside.co)</a></li>"
@@ -3112,6 +3321,8 @@ void setupWebServer() {
                      "<p>Binary TSL 5.0 protocol over UDP or TCP on port 8900. Parses 4 tally status bits (Tally 1 Red, Tally 2 Green, Tally 3 Amber, Tally 4 Blue) and UTF-8 screen text.</p>"
                      "<h3>13. OSC Cue Light for iOS (RSMCK Protocol)</h3>"
                      "<p>Compatible with the iOS OSC Cue Light app on UDP port 53000. Handles <code>/cuelight/[station]/standby_ack</code> with button acknowledgement return and persistent top banner.</p>"
+                     "<h3>14. vMix Tally (TCP API Port 8099)</h3>"
+                     "<p>Connects directly to vMix live production software over TCP port 8099 and sends <code>SUBSCRIBE TALLY</code>. Instantaneously lights Red for Program (<code>1</code>), Green for Preview (<code>2</code>), and Black for Off (<code>0</code>) on the configured input number, with optional button trigger for <code>PreviewInput</code> or <code>ActiveInput</code>.</p>"
                      "</div>"
                      "<h2 id='p2p'>2. P2P Heartbeat & 4-Missed Fault Detection</h2>"
                      "<div class='card'>"
@@ -3188,7 +3399,7 @@ void setupWebServer() {
     preferences.end();
 
     logger(String("[P2P] Paired with: ") + pairedTargetName + " (" + pairedTargetIP + ") in group " + pairingGroup, "info");
-    renderScreen();
+    tallyStateChanged = true;
 
     JSONVar res;
     res["success"] = true;
@@ -3349,6 +3560,25 @@ void setupWebServer() {
       osccue_banner = request->getParam("osccue_banner", true)->value();
     }
 
+    // vMix Tally settings
+    if (request->hasParam("vmix_host", true)) {
+      vmix_host = request->getParam("vmix_host", true)->value();
+    }
+    if (request->hasParam("vmix_port", true)) {
+      int vp = request->getParam("vmix_port", true)->value().toInt();
+      vmix_port = vp > 0 ? vp : 8099;
+    }
+    if (request->hasParam("vmix_input", true)) {
+      int vi = request->getParam("vmix_input", true)->value().toInt();
+      vmix_input = vi >= 1 ? vi : 1;
+    }
+    if (request->hasParam("vmix_label", true)) {
+      vmix_label = request->getParam("vmix_label", true)->value();
+    }
+    if (request->hasParam("vmix_btn", true)) {
+      vmix_btn_action = request->getParam("vmix_btn", true)->value().toInt();
+    }
+
     // rtpMIDI settings
     if (request->hasParam("midi_port", true)) {
       rtpmidi_port = request->getParam("midi_port", true)->value().toInt();
@@ -3487,6 +3717,11 @@ void setupWebServer() {
     preferences.putString("taListenerName", listenerDeviceName);
     preferences.putInt("cpuFreq", cpu_freq_mhz);
     preferences.putInt("dimTimeout", screen_dim_timeout_sec);
+    preferences.putString("vmixHost", vmix_host);
+    preferences.putInt("vmixPort", vmix_port);
+    preferences.putInt("vmixInput", vmix_input);
+    preferences.putString("vmixLbl", vmix_label);
+    preferences.putInt("vmixBtn", vmix_btn_action);
     preferences.end();
 
     // 1. Send HTTP 200 response FIRST so browser connection finishes cleanly without reset
@@ -3515,26 +3750,22 @@ void setupWebServer() {
 
     // Configure UDP Listener Port
     if (networkConnected) {
-      uint16_t listenPort = atoi(tallyarbiter_TSLport);
-      if (isETCCueSystem()) listenPort = cuesystem_port;
-      else if (isRTPMidi()) listenPort = rtpmidi_port;
-      else if (isOSC()) listenPort = osc_port;
-      else if (isTSL31Listener()) listenPort = tsl31_port;
-      else if (isTSL50Listener()) listenPort = tsl50_port;
-      else if (isOSCCueLight()) listenPort = osccue_port;
+      uint16_t listenPort = getActiveListenPort();
       udp.stop();
-      udp.begin(listenPort);
+      udpStarted = udp.begin(listenPort);
 
       if (isNMOSIS07() && nmos_auto_discover) {
-        discoverNMOSRegistrationServer();
+        needNmosDiscovery = true;
       }
     }
 
-    // Re-register mDNS TXT records
-    MDNS.addServiceTxt("cuelx-tally", "udp", "role", isPresenter() ? "presenter" : (isTP() ? "tp" : (isETCCueSystem() ? "cue" : (isRTPMidi() ? "midi" : (isOSC() ? "osc" : (isTSL31Listener() ? "tsl31" : (isTSL50Listener() ? "tsl50" : (isOSCCueLight() ? "osccue" : "nmos"))))))));
-    MDNS.addServiceTxt("cuelx-tally", "udp", "mode", operatingMode.c_str());
-    MDNS.addServiceTxt("cuelx-tally", "udp", "group", pairingGroup.c_str());
-    MDNS.addServiceTxt("cuelx-tally", "udp", "name", listenerDeviceName.c_str());
+    // Re-register mDNS TXT records only if mDNS has already started
+    if (servicesStarted) {
+      MDNS.addServiceTxt("cuelx-tally", "udp", "role", getActiveRoleTag());
+      MDNS.addServiceTxt("cuelx-tally", "udp", "mode", operatingMode.c_str());
+      MDNS.addServiceTxt("cuelx-tally", "udp", "group", pairingGroup.c_str());
+      MDNS.addServiceTxt("cuelx-tally", "udp", "name", listenerDeviceName.c_str());
+    }
 
     if (usesTallyArbiter()) {
       connectToServer();
@@ -3542,7 +3773,11 @@ void setupWebServer() {
       disconnectFromServer();
     }
 
-    renderScreen();
+    if (isVmix()) {
+      vmixReconnectRequested = true;
+    }
+
+    tallyStateChanged = true;
   });
 
   // CRITICAL: Explicitly start AsyncWebServer so port 80 listens immediately
@@ -3663,6 +3898,11 @@ void setup() {
   if (preferences.isKey("mBtnRel")) midi_btn_val_release = preferences.getInt("mBtnRel", 0);
   if (preferences.isKey("cpuFreq")) cpu_freq_mhz = preferences.getInt("cpuFreq", 80);
   if (preferences.isKey("dimTimeout")) screen_dim_timeout_sec = preferences.getInt("dimTimeout", 60);
+  if (preferences.getString("vmixHost").length() > 0) vmix_host = preferences.getString("vmixHost");
+  if (preferences.isKey("vmixPort")) vmix_port = preferences.getInt("vmixPort", 8099);
+  if (preferences.isKey("vmixInput")) vmix_input = preferences.getInt("vmixInput", 1);
+  if (preferences.getString("vmixLbl").length() > 0) vmix_label = preferences.getString("vmixLbl");
+  if (preferences.isKey("vmixBtn")) vmix_btn_action = preferences.getInt("vmixBtn", 0);
   preferences.end();
 
   // Apply Timezone & Power Management Configuration
@@ -3691,6 +3931,9 @@ void setup() {
     setupTSLTcpServer(tsl50_port);
   }
 
+  taStateMutex = xSemaphoreCreateMutex();
+  bootStartTimeMs = millis();
+
   // 1. Setup Ethernet Network Event Handlers BEFORE ETH.begin()
   WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info) {
     switch (event) {
@@ -3702,40 +3945,41 @@ void setup() {
         logger("[ETH] Cable connected (Link UP)", "info");
         break;
       case ARDUINO_EVENT_ETH_GOT_IP:
+        ETH.setDefault();
         logger(String("[ETH] IP Assigned (") + (useDHCP ? "DHCP" : "Static") + "): " + ETH.localIP().toString(), "info");
         networkConnected = true;
-        checkEthernetWifiPrecedence();
+        needNetworkServicesInit = true;
+        ethPrecedenceCheckDue = true;
         {
-          uint16_t listenPort = atoi(tallyarbiter_TSLport);
-          if (isETCCueSystem()) listenPort = cuesystem_port;
-          else if (isRTPMidi()) listenPort = rtpmidi_port;
-          else if (isOSC()) listenPort = osc_port;
-          else if (isTSL31Listener()) listenPort = tsl31_port;
-          else if (isTSL50Listener()) listenPort = tsl50_port;
-          else if (isOSCCueLight()) listenPort = osccue_port;
-          udp.begin(listenPort);
+          uint16_t listenPort = getActiveListenPort();
+          udp.stop();
+          udpStarted = udp.begin(listenPort);
           if (isNMOSIS07() && nmos_auto_discover) {
-            discoverNMOSRegistrationServer();
+            needNmosDiscovery = true;
           }
         }
         if (usesTallyArbiter()) {
           connectToServer();
         }
-        renderScreen();
+        tallyStateChanged = true;
         break;
       case ARDUINO_EVENT_ETH_LOST_IP:
       case ARDUINO_EVENT_ETH_DISCONNECTED:
         logger("[ETH] Cable disconnected (Link DOWN)", "info");
         if (WiFi.status() != WL_CONNECTED) {
           networkConnected = false;
+          udp.stop();
+          udpStarted = false;
           disconnectFromServer();
         }
-        renderScreen();
+        tallyStateChanged = true;
         break;
       case ARDUINO_EVENT_ETH_STOP:
         logger("[ETH] Interface stopped", "info");
         if (WiFi.status() != WL_CONNECTED) {
           networkConnected = false;
+          udp.stop();
+          udpStarted = false;
         }
         break;
       default:
@@ -3753,34 +3997,36 @@ void setup() {
     logger("[ETH] ERROR: ETH.begin returned false! Check AtomPoE hardware seating.", "error");
   }
 
-  // 3. Setup MycilaESPConnect Network Manager
+  // 3. Configure MycilaESPConnect callback (started after 7s grace window ONLY if Ethernet is absent)
   espConnect.setAutoRestart(false);
   espConnect.setBlocking(false);
   espConnect.listen([](Mycila::ESPConnect::State previous, Mycila::ESPConnect::State current) {
     logger(String("[Network] State: ") + String((int)previous) + " -> " + String((int)current), "info");
     if (current == Mycila::ESPConnect::State::NETWORK_CONNECTED) {
+      if (isEthernetActive()) {
+        checkEthernetWifiPrecedence();
+        return;
+      }
       networkConnected = true;
+      needNetworkServicesInit = true;
       logger("[Network] Connected! IP: " + getNetworkIPStr(), "info");
-      uint16_t listenPort = atoi(tallyarbiter_TSLport);
-      if (isETCCueSystem()) listenPort = cuesystem_port;
-      else if (isRTPMidi()) listenPort = rtpmidi_port;
-      else if (isOSC()) listenPort = osc_port;
-      else if (isTSL31Listener()) listenPort = tsl31_port;
-      else if (isTSL50Listener()) listenPort = tsl50_port;
-      else if (isOSCCueLight()) listenPort = osccue_port;
-      udp.begin(listenPort);
+      uint16_t listenPort = getActiveListenPort();
+      udp.stop();
+      udpStarted = udp.begin(listenPort);
       if (isNMOSIS07() && nmos_auto_discover) {
-        discoverNMOSRegistrationServer();
+        needNmosDiscovery = true;
       }
       if (usesTallyArbiter()) {
         connectToServer();
       }
-      renderScreen();
+      tallyStateChanged = true;
     } else if (current == Mycila::ESPConnect::State::NETWORK_DISCONNECTED) {
       if (!isEthernetActive()) {
         networkConnected = false;
+        udp.stop();
+        udpStarted = false;
         disconnectFromServer();
-        renderScreen();
+        tallyStateChanged = true;
       }
     } else if (current == Mycila::ESPConnect::State::PORTAL_TIMEOUT) {
       logger("[Network] Portal timeout reached; auto-restart prevented. Continuing normal operation.", "info");
@@ -3790,39 +4036,12 @@ void setup() {
   // 4. Setup Web Server endpoints & start listening on port 80
   setupWebServer();
 
-  // 5. Initialize network manager (non-blocking, hostname & AP SSID)
-  // Ensure auto-restart is disabled so captive portal timeout never restarts the MCU
-  espConnect.setAutoRestart(false);
-  espConnect.setBlocking(false);
+  // 5. Wait up to 7s for PoE Ethernet before enabling Wi-Fi / Captive Portal
+  // Prevents Wi-Fi STA/AP netif churn from colliding with busy-network multicast during DHCP startup
   if (isEthernetActive()) {
-    logger("[Network] PoE Ethernet link active on boot. Wi-Fi AP disabled to ensure single deterministic IP.", "info");
-    wifiDisabledForEth = true;
-    WiFi.disconnect(false);
-    WiFi.enableAP(false);
+    checkEthernetWifiPrecedence();
   } else {
-    logger("[Network] Initializing MycilaESPConnect...", "info");
-    espConnect.begin(listenerDeviceName.c_str(), listenerDeviceName.c_str());
-  }
-
-  // Initialize NTP Time
-  configTzTime(posix_time_zone_info, daylightOffset_sec, ntpServer1, ntpServer2);
-
-  // Initialize ArduinoOTA
-  ArduinoOTA.setHostname(listenerDeviceName.c_str());
-  ArduinoOTA.setPassword("tallyarbiter");
-  ArduinoOTA.begin();
-
-  // Initialize mDNS & register DNS-SD service for local discovery
-  if (MDNS.begin(mdnsdotlocalurl.c_str())) {
-    MDNS.addService("CueLX", "tcp", 80);
-    MDNS.addService("http", "tcp", 80);
-    uint16_t mDnsPort = isETCCueSystem() ? cuesystem_port : (isRTPMidi() ? rtpmidi_port : (isOSC() ? osc_port : (isTSL31Listener() ? tsl31_port : (isTSL50Listener() ? tsl50_port : (isOSCCueLight() ? osccue_port : atoi(tallyarbiter_TSLport))))));
-    MDNS.addService("cuelx-tally", "udp", mDnsPort);
-    MDNS.addServiceTxt("cuelx-tally", "udp", "role", isPresenter() ? "presenter" : (isTP() ? "tp" : (isETCCueSystem() ? "cue" : (isRTPMidi() ? "midi" : (isOSC() ? "osc" : (isTSL31Listener() ? "tsl31" : (isTSL50Listener() ? "tsl50" : (isOSCCueLight() ? "osccue" : "nmos"))))))));
-    MDNS.addServiceTxt("cuelx-tally", "udp", "mode", operatingMode.c_str());
-    MDNS.addServiceTxt("cuelx-tally", "udp", "group", pairingGroup.c_str());
-    MDNS.addServiceTxt("cuelx-tally", "udp", "name", listenerDeviceName.c_str());
-    logger(String("[mDNS] Service _cuelx-tally._udp registered on port ") + String(mDnsPort), "info");
+    logger("[ETH] Waiting up to 7s for PoE Ethernet link/IP before starting Wi-Fi fallback...", "info");
   }
 
   // Initial Screen Render
@@ -3845,19 +4064,42 @@ void setup() {
 // ==========================================
 void loop() {
   M5.update();
-  espConnect.loop();
-  ArduinoOTA.handle();
 
-  // 0. Ethernet Precedence: Keep Wi-Fi AP disabled when PoE Ethernet is active
+  // Delayed Wi-Fi fallback: start MycilaESPConnect only if no Ethernet link came up within 7s
+  if (!espConnectStarted && !isEthernetActive() && !ETH.linkUp() && (millis() - bootStartTimeMs >= 7000)) {
+    startEspConnectFallback();
+  }
+
+  if (espConnectStarted && !wifiDisabledForEth && !isEthernetActive()) {
+    espConnect.loop();
+  }
+
+  // Deferred mDNS / OTA / NTP startup once an interface has an active IP
+  if (needNetworkServicesInit && networkConnected) {
+    needNetworkServicesInit = false;
+    startNetworkServices();
+  }
+
+  if (needNmosDiscovery && networkConnected && servicesStarted) {
+    needNmosDiscovery = false;
+    discoverNMOSRegistrationServer();
+  }
+
+  if (networkConnected && servicesStarted) {
+    ArduinoOTA.handle();
+  }
+
+  // 0. Ethernet Precedence: Keep Wi-Fi powered down when PoE Ethernet is active
   static unsigned long lastEthPrecedenceCheck = 0;
-  if (millis() - lastEthPrecedenceCheck >= 1000) {
+  if (ethPrecedenceCheckDue || (millis() - lastEthPrecedenceCheck >= 1000)) {
+    ethPrecedenceCheckDue = false;
     lastEthPrecedenceCheck = millis();
     checkEthernetWifiPrecedence();
   }
 
-  // 0.2 Tally Arbiter Auto-Connect / Keep-Alive Watchdog
+  // 0.2 Tally Arbiter Auto-Connect / Keep-Alive Watchdog (thread-safe flag handoff to Core 0)
   static unsigned long lastTAConnectCheck = 0;
-  if (usesTallyArbiter() && networkConnected && !socket.isConnected()) {
+  if (usesTallyArbiter() && networkConnected && !taSocketConnected) {
     if (millis() - lastTAConnectCheck >= 3000) {
       lastTAConnectCheck = millis();
       logger("[TallyArbiter] Ensuring connection to server...", "info");
@@ -3920,11 +4162,11 @@ void loop() {
       M5.Imu.getAccel(&ax, &ay, &az);
       uint8_t targetRot = currentRotation;
       if (fabs(ay) >= fabs(ax)) {
-        if (ay < -0.45f) targetRot = 0;      // Upright (Grove/PoE ports at bottom)
-        else if (ay > 0.45f) targetRot = 2; // Inverted 180 (Grove/PoE ports at top)
+        if (ay < -0.45f) targetRot = 2;      // Upright (Grove/PoE ports at bottom)
+        else if (ay > 0.45f) targetRot = 0;  // Inverted 180 (Grove/PoE ports at top)
       } else {
-        if (ax > 0.45f) targetRot = 1;      // Rotated 90 deg clockwise (ports on left)
-        else if (ax < -0.45f) targetRot = 3;// Rotated 90 deg counter-clockwise (ports on right)
+        if (ax > 0.45f) targetRot = 1;       // Rotated 90 deg clockwise (ports on left)
+        else if (ax < -0.45f) targetRot = 3; // Rotated 90 deg counter-clockwise (ports on right)
       }
 
       if (targetRot != currentRotation) {
@@ -3935,7 +4177,7 @@ void loop() {
           currentRotation = targetRot;
           // CRITICAL FIX: Only rotate hardware scanout; do NOT double-rotate canvas!
           M5.Display.setRotation(currentRotation);
-          logger(String("[IMU] Screen auto-rotated to ") + String(currentRotation * 90) + " degrees", "info");
+          logger(String("[IMU] Screen auto-rotated to ") + String(getPhysicalRotationDegrees()) + " degrees (rot=" + String(currentRotation) + ")", "info");
           renderScreen();
         }
       } else {
@@ -4023,6 +4265,15 @@ void loop() {
       logger("[Button] TSL Listener Info toggle pressed", "info");
       currentScreen = (currentScreen == 0) ? 1 : 0;
       renderScreen();
+    } else if (isVmix()) {
+      if (vmix_btn_action == 0) {
+        logger("[Button] vMix Diagnostics Screen toggle pressed", "info");
+        currentScreen = (currentScreen == 0) ? 1 : 0;
+        renderScreen();
+      } else {
+        logger(String("[Button] vMix trigger queued for Input ") + String(vmix_input), "info");
+        vmixButtonActionRequested = true;
+      }
     } else {
       logger(String("[Button] Single Click: Toggle Cue CH1 (") + (isPresenter() ? "Presenter Preview" : "TP Program") + ")", "info");
       ch1state = !ch1state;
@@ -4111,10 +4362,161 @@ void loop() {
 void socketTask(void *pvParameters) {
   logger("[Task] Socket.IO background task running on Core 0", "info");
   for (;;) {
+    if (taDisconnectRequested) {
+      taDisconnectRequested = false;
+      if (socket.isConnected()) {
+        socket.disconnect();
+        logger("[TallyArbiter] Disconnected from server (Network link down)", "info");
+      }
+    }
     if (networkConnected && usesTallyArbiter()) {
+      if (taConnectRequested) {
+        taConnectRequested = false;
+        if (!socket.isConnected()) {
+          logger(String("[TallyArbiter] Connecting to ") + tallyarbiter_host + ":" + tallyarbiter_port, "info");
+          socket.onEvent(socket_event);
+          socket.setReconnectInterval(5000);
+          socket.begin(tallyarbiter_host, atol(tallyarbiter_port));
+        }
+      }
       socket.loop();
     }
+    taSocketConnected = socket.isConnected();
+
+    // vMix TCP API client also runs strictly on Core 0 so connect timeouts never stall Core 1 UI
+    handleVmixSocketLoop();
+
     vTaskDelay(pdMS_TO_TICKS(5));
+  }
+}
+
+void handleVmixSocketLoop() {
+  static unsigned long lastVmixReconnectAttempt = 0;
+  static unsigned long lastVmixPollTime = 0;
+
+  if (!networkConnected || !isVmix()) {
+    if (vmixClient.connected()) {
+      vmixClient.stop();
+    }
+    if (vmixConnected) {
+      vmixConnected = false;
+      vmixRxBuffer = "";
+      tallyStateChanged = true;
+    }
+    return;
+  }
+
+  if (vmixReconnectRequested) {
+    vmixReconnectRequested = false;
+    if (vmixClient.connected()) {
+      vmixClient.stop();
+    }
+    vmixConnected = false;
+    vmixRxBuffer = "";
+    lastVmixReconnectAttempt = 0;
+    tallyStateChanged = true;
+  }
+
+  if (!vmixClient.connected()) {
+    if (vmixConnected) {
+      vmixConnected = false;
+      vmixRxBuffer = "";
+      logger("[vMix] TCP connection closed; reconnecting...", "info");
+      tallyStateChanged = true;
+    }
+    unsigned long now = millis();
+    if (lastVmixReconnectAttempt == 0 || (now - lastVmixReconnectAttempt >= 3000)) {
+      lastVmixReconnectAttempt = now;
+      String targetHost = vmix_host;
+      int targetPort = vmix_port > 0 ? vmix_port : 8099;
+      if (targetHost.length() > 0) {
+        IPAddress ip;
+        bool ok = false;
+        if (ip.fromString(targetHost)) {
+          ok = vmixClient.connect(ip, targetPort, 1500);
+        } else {
+          ok = vmixClient.connect(targetHost.c_str(), targetPort, 1500);
+        }
+        if (ok) {
+          vmixClient.setNoDelay(true);
+          vmixClient.print("SUBSCRIBE TALLY\r\n");
+          vmixConnected = true;
+          vmixRxBuffer = "";
+          lastVmixPollTime = millis();
+          logger(String("[vMix] Connected to ") + targetHost + ":" + String(targetPort) + " (Subscribed TALLY)", "info");
+          tallyStateChanged = true;
+        }
+      }
+    }
+    return;
+  }
+
+  // Send button feedback command to vMix if requested from Core 1
+  if (vmixButtonActionRequested) {
+    vmixButtonActionRequested = false;
+    if (vmix_btn_action == 1) {
+      vmixClient.print(String("FUNCTION PreviewInput Input=") + String(vmix_input) + "\r\n");
+      logger(String("[vMix] Sent FUNCTION PreviewInput Input=") + String(vmix_input), "info");
+    } else if (vmix_btn_action == 2) {
+      vmixClient.print(String("FUNCTION ActiveInput Input=") + String(vmix_input) + "\r\n");
+      logger(String("[vMix] Sent FUNCTION ActiveInput Input=") + String(vmix_input), "info");
+    }
+  }
+
+  // Periodic 5s TALLY health check to detect half-open TCP drops promptly
+  if (millis() - lastVmixPollTime >= 5000) {
+    lastVmixPollTime = millis();
+    if (vmixClient.print("TALLY\r\n") == 0) {
+      vmixClient.stop();
+      vmixConnected = false;
+      tallyStateChanged = true;
+      return;
+    }
+  }
+
+  // Parse incoming vMix TCP API lines (e.g. "TALLY OK 012000...")
+  while (vmixClient.available() > 0) {
+    char c = (char)vmixClient.read();
+    if (c == '\r') continue;
+    if (c == '\n') {
+      String line = vmixRxBuffer;
+      vmixRxBuffer = "";
+      line.trim();
+      if (line.startsWith("TALLY OK ")) {
+        String states = line.substring(9);
+        int idx = vmix_input - 1;
+        int nextState = 0;
+        if (idx >= 0 && idx < (int)states.length()) {
+          char sc = states.charAt(idx);
+          if (sc == '1') nextState = 1;      // Program (Red)
+          else if (sc == '2') nextState = 2; // Preview (Green)
+          else nextState = 0;                // Off (Black)
+        }
+        bool changed = false;
+        if (taStateMutex != NULL && xSemaphoreTake(taStateMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+          if (vmix_tally_val != nextState) {
+            vmix_tally_val = nextState;
+            changed = true;
+          }
+          actualType = (nextState == 1) ? "\"program\"" : ((nextState == 2) ? "\"preview\"" : "");
+          actualColor = (nextState == 1) ? "#FF0000" : ((nextState == 2) ? "#00FF00" : "");
+          xSemaphoreGive(taStateMutex);
+        } else {
+          if (vmix_tally_val != nextState) {
+            vmix_tally_val = nextState;
+            changed = true;
+          }
+          actualType = (nextState == 1) ? "\"program\"" : ((nextState == 2) ? "\"preview\"" : "");
+          actualColor = (nextState == 1) ? "#FF0000" : ((nextState == 2) ? "#00FF00" : "");
+        }
+        if (changed) {
+          logger(String("[vMix] Input ") + String(vmix_input) + " -> " + (nextState == 1 ? "PROGRAM (Red)" : (nextState == 2 ? "PREVIEW (Green)" : "OFF")), "info");
+          tallyStateChanged = true;
+        }
+      }
+    } else if (vmixRxBuffer.length() < 512) {
+      vmixRxBuffer += c;
+    }
   }
 }
 
@@ -4133,20 +4535,13 @@ void connectToServer() {
     logger("[TallyArbiter] Network not connected; deferring connectToServer()", "info");
     return;
   }
-  if (socket.isConnected()) {
-    return;
-  }
-  logger(String("[TallyArbiter] Connecting to ") + tallyarbiter_host + ":" + tallyarbiter_port, "info");
-  socket.onEvent(socket_event);
-  socket.setReconnectInterval(5000);
-  socket.begin(tallyarbiter_host, atol(tallyarbiter_port));
+  taDisconnectRequested = false;
+  taConnectRequested = true;
 }
 
 void disconnectFromServer() {
-  if (socket.isConnected()) {
-    socket.disconnect();
-    logger("[TallyArbiter] Disconnected from server (Network link down)", "info");
-  }
+  taConnectRequested = false;
+  taDisconnectRequested = true;
 }
 
 void socket_event(socketIOmessageType_t type, uint8_t *payload, size_t length) {
@@ -4170,24 +4565,34 @@ void socket_event(socketIOmessageType_t type, uint8_t *payload, size_t length) {
       eventContent = eventMsg.substring(eventType.length() + 4);
       eventContent.remove(eventContent.length() - 1);
 
-      if (eventType == "bus_options") BusOptions = JSON.parse(eventContent);
+      if (eventType == "bus_options") {
+        if (taStateMutex != NULL) xSemaphoreTake(taStateMutex, portMAX_DELAY);
+        BusOptions = JSON.parse(eventContent);
+        if (taStateMutex != NULL) xSemaphoreGive(taStateMutex);
+      }
       if (eventType == "reassign")    socket_Reassign(eventContent);
       if (eventType == "flash")       socket_Flash();
       if (eventType == "messaging")   socket_Messaging(eventContent);
 
       if (eventType == "deviceId") {
+        if (taStateMutex != NULL) xSemaphoreTake(taStateMutex, portMAX_DELAY);
         DeviceId = eventContent.substring(1, eventContent.length() - 1);
+        if (taStateMutex != NULL) xSemaphoreGive(taStateMutex);
         SetDeviceName();
         showDeviceInfo();
       }
 
       if (eventType == "devices") {
+        if (taStateMutex != NULL) xSemaphoreTake(taStateMutex, portMAX_DELAY);
         Devices = JSON.parse(eventContent);
+        if (taStateMutex != NULL) xSemaphoreGive(taStateMutex);
         SetDeviceName();
       }
 
       if (eventType == "device_states") {
+        if (taStateMutex != NULL) xSemaphoreTake(taStateMutex, portMAX_DELAY);
         DeviceStates = JSON.parse(eventContent);
+        if (taStateMutex != NULL) xSemaphoreGive(taStateMutex);
         processTallyData();
       }
       break;
@@ -4226,7 +4631,10 @@ void socket_Reassign(String payload) {
   ws_emit("listener_reassign_object", charReassignObj);
   ws_emit("devices");
 
+  if (taStateMutex != NULL) xSemaphoreTake(taStateMutex, portMAX_DELAY);
   DeviceId = newDeviceId;
+  if (taStateMutex != NULL) xSemaphoreGive(taStateMutex);
+
   preferences.begin("tally-arbiter", false);
   preferences.putString("deviceid", newDeviceId);
   preferences.end();
@@ -4240,11 +4648,14 @@ void socket_Messaging(String payload) {
   int messageQuoteIndex = payload.lastIndexOf(',');
   String message = payload.substring(messageQuoteIndex + 1);
   message.replace("\"", "");
+  if (taStateMutex != NULL) xSemaphoreTake(taStateMutex, portMAX_DELAY);
   LastMessage = messageType + ": " + message;
+  if (taStateMutex != NULL) xSemaphoreGive(taStateMutex);
   evaluateMode();
 }
 
 void processTallyData() {
+  if (taStateMutex != NULL) xSemaphoreTake(taStateMutex, portMAX_DELAY);
   bool typeChanged = false;
   for (int i = 0; i < DeviceStates.length(); i++) {
     if (DeviceStates[i]["sources"].length() > 0) {
@@ -4260,6 +4671,7 @@ void processTallyData() {
     actualColor = "";
     actualPriority = 0;
   }
+  if (taStateMutex != NULL) xSemaphoreGive(taStateMutex);
   evaluateMode();
 }
 
@@ -4291,6 +4703,7 @@ int getBusPriorityById(String busId) {
 }
 
 void SetDeviceName() {
+  if (taStateMutex != NULL) xSemaphoreTake(taStateMutex, portMAX_DELAY);
   for (int i = 0; i < Devices.length(); i++) {
     if (JSON.stringify(Devices[i]["id"]) == "\"" + DeviceId + "\"") {
       String strDevice = JSON.stringify(Devices[i]["name"]);
@@ -4298,8 +4711,11 @@ void SetDeviceName() {
       break;
     }
   }
+  String devNameCopy = DeviceName;
+  if (taStateMutex != NULL) xSemaphoreGive(taStateMutex);
+
   preferences.begin("tally-arbiter", false);
-  preferences.putString("devicename", DeviceName);
+  preferences.putString("devicename", devNameCopy);
   preferences.end();
   evaluateMode();
 }

@@ -125,6 +125,13 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
   const [formMidiBtnPress, setFormMidiBtnPress] = useState(state.midiBtnPress);
   const [formMidiBtnRelease, setFormMidiBtnRelease] = useState(state.midiBtnRelease);
 
+  // vMix Live Production Tally (TCP API 8099)
+  const [formVmixHost, setFormVmixHost] = useState(state.vmixHost);
+  const [formVmixPort, setFormVmixPort] = useState(state.vmixPort);
+  const [formVmixInput, setFormVmixInput] = useState(state.vmixInput);
+  const [formVmixLabel, setFormVmixLabel] = useState(state.vmixLabel);
+  const [formVmixBtnAction, setFormVmixBtnAction] = useState(state.vmixBtnAction);
+
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [discoveredPeers, setDiscoveredPeers] = useState<DiscoveredPeer[] | null>(null);
@@ -194,7 +201,12 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
       rtpMidiNumWhite: formRtpNumWhite,
       oscPort: formOscPort,
       oscPrefix: formOscPrefix,
-      oscCustomMessage: formOscMessage
+      oscCustomMessage: formOscMessage,
+      vmixHost: formVmixHost,
+      vmixPort: formVmixPort,
+      vmixInput: formVmixInput,
+      vmixLabel: formVmixLabel,
+      vmixBtnAction: formVmixBtnAction
     }));
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 2500);
@@ -302,6 +314,7 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
                   {state.operatingMode === 'TP' && 'Program Return (0x32)'}
                   {state.operatingMode === 'Presenter_P2P' && 'P2P Preview Return'}
                   {state.operatingMode === 'TP_P2P' && 'P2P Program Return'}
+                  {state.operatingMode === 'vMix' && 'vMix TCP Tally (8099)'}
                 </span>
               </div>
 
@@ -361,6 +374,7 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
                   <option value="NMOS_IS07">NMOS IS-07 Event &amp; Tally (SMPTE ST 2110)</option>
                   <option value="RTP_MIDI">rtpMIDI / AppleMIDI Outstation (6 Colors with Priority)</option>
                   <option value="OSC">OSC (Open Sound Control with Scrolling Text Ticker)</option>
+                  <option value="vMix">vMix Tally (TCP API Port 8099)</option>
                 </select>
                 <p className="text-[11px] text-neutral-400 mt-1">
                   {formMode === 'Presenter' && 'Button click transmits Green TSL Preview cue (0x31) back to Tally Arbiter.'}
@@ -376,6 +390,7 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
                   {formMode === 'NMOS_IS07' && 'AMWA NMOS IS-07: Emits state events for Program, Preview and Aux endpoints over ST 2110.'}
                   {formMode === 'RTP_MIDI' && 'AppleMIDI / rtpMIDI on UDP 5004. Priority: Red > Flashing Red > Green > Yellow > Blue > White.'}
                   {formMode === 'OSC' && 'Open Sound Control on UDP 8000. Supports 6 tally colors plus custom scrolling text ticker.'}
+                  {formMode === 'vMix' && 'Connects via TCP to vMix on port 8099 (SUBSCRIBE TALLY). Shows Red (Program 1) and Green (Preview 2) for the selected Input.'}
                 </p>
               </div>
 
@@ -1428,6 +1443,82 @@ export const WebPortalPreview: React.FC<WebPortalPreviewProps> = ({ state, setSt
                       </div>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* MODE AWARE SECTION: vMix Live Production Tally */}
+              {formMode === 'vMix' && (
+                <div className="p-4 bg-neutral-900/90 rounded-xl border border-sky-900/50 space-y-3">
+                  <h3 className="text-xs font-bold text-sky-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Tv className="w-3.5 h-3.5" />
+                    <span>vMix Live Production Tally (TCP API Port 8099)</span>
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                        vMix Workstation Host / IP
+                      </label>
+                      <input
+                        type="text"
+                        value={formVmixHost}
+                        onChange={(e) => setFormVmixHost(e.target.value)}
+                        placeholder="192.168.1.100"
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                        vMix TCP API Port (Default: 8099)
+                      </label>
+                      <input
+                        type="number"
+                        value={formVmixPort}
+                        onChange={(e) => setFormVmixPort(parseInt(e.target.value) || 8099)}
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                        vMix Input Number (1 - 999)
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={999}
+                        value={formVmixInput}
+                        onChange={(e) => setFormVmixInput(Math.max(1, parseInt(e.target.value) || 1))}
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                        Custom Display Label (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={formVmixLabel}
+                        onChange={(e) => setFormVmixLabel(e.target.value)}
+                        placeholder="e.g. CAM 1"
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-neutral-400 mb-1">
+                      Screen Button Action
+                    </label>
+                    <select
+                      value={formVmixBtnAction}
+                      onChange={(e) => setFormVmixBtnAction(parseInt(e.target.value) || 0)}
+                      className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white"
+                    >
+                      <option value={0}>Switch Diagnostics Screen (Safe Default)</option>
+                      <option value={1}>Send Input to Preview (FUNCTION PreviewInput)</option>
+                      <option value={2}>Cut Input to Program (FUNCTION ActiveInput)</option>
+                    </select>
+                  </div>
                 </div>
               )}
 

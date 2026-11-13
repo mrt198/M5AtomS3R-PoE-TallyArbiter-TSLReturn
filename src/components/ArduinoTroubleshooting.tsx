@@ -416,6 +416,24 @@ mbedtls_md5_finish(&_ctx, (unsigned char *)_buf);`}
               <div>✓ Added a 3-second keep-alive watchdog in <code className="text-neutral-200 font-mono">loop()</code> to maintain continuous connection to Tally Arbiter.</div>
             </div>
           </div>
+
+          <div className="p-4 bg-neutral-950 rounded-xl border border-neutral-800 space-y-2 md:col-span-2">
+            <span className="text-rose-400 font-bold block flex items-center justify-between">
+              <span>5. Busy-Network Core 0 Crash (<code className="text-rose-300 font-mono">igmp_lookup_group</code> / <code className="text-rose-300 font-mono">0xbaad5678</code> at <code className="text-rose-300 font-mono">State 2 -&gt; 3 -&gt; 9</code>)</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">Fixed</span>
+            </span>
+            <p className="text-neutral-300 font-sans text-xs leading-relaxed">
+              <strong>Cause 1 (ESPConnect Netif Churn):</strong> Because W5500 Ethernet DHCP takes ~4.6s on boot, starting <code className="text-red-300 font-mono">espConnect.begin()</code> at <code className="text-neutral-200 font-mono">t=0ms</code> left the Wi-Fi STA/AP state machine cycling (<code className="text-neutral-200 font-mono">State 2 -&gt; 3 -&gt; 9 PORTAL_STARTING</code>). Tearing down STA/AP netifs while busy multicast traffic arrived on Core 0 tripped <code className="text-red-300 font-mono">igmp_lookup_group: first group must be allsystems</code> and freed-heap <code className="text-red-300 font-mono">LoadProhibited (0xbaad5678)</code> panics.
+            </p>
+            <p className="text-neutral-300 font-sans text-xs leading-relaxed">
+              <strong>Cause 2 (Premature mDNS, EBADF, &amp; Cross-Core Socket/Display Races):</strong> <code className="text-neutral-200 font-mono">MDNS.begin()</code> and <code className="text-neutral-200 font-mono">ArduinoOTA.begin()</code> ran before any interface held an IP; <code className="text-neutral-200 font-mono">udp.parsePacket()</code> ran before <code className="text-neutral-200 font-mono">udp.begin()</code> (<code className="text-amber-300 font-mono">errno 9 EBADF</code>); and <code className="text-neutral-200 font-mono">socketTask</code> (Core 0), <code className="text-neutral-200 font-mono">AsyncTCP</code>, and <code className="text-neutral-200 font-mono">loop()</code> (Core 1) concurrently accessed <code className="text-neutral-200 font-mono">SocketIOclient</code> and <code className="text-neutral-200 font-mono">renderScreen()</code>.
+            </p>
+            <div className="p-2.5 bg-neutral-900 rounded border border-neutral-800 text-[11px] text-emerald-300 space-y-1">
+              <div>✓ Added a <strong>7-second Ethernet boot grace window</strong>: when PoE Ethernet connects cleanly, <code className="text-cyan-300 font-mono">ETH.setDefault()</code> routes Socket.IO/HTTP over W5500, <code className="text-cyan-300 font-mono">espConnect.end()</code> + <code className="text-cyan-300 font-mono">WiFi.mode(WIFI_OFF)</code> stop Wi-Fi churn without breaking LwIP.</div>
+              <div>✓ Deferred <code className="text-cyan-300 font-mono">MDNS.begin()</code> &amp; <code className="text-cyan-300 font-mono">ArduinoOTA</code> (with <code className="text-cyan-300 font-mono">setMdnsEnabled(false)</code>) until an IP is assigned, and guarded UDP RX/TX with <code className="text-cyan-300 font-mono">udpStarted</code> + 8-packet burst draining.</div>
+              <div>✓ Isolated all <code className="text-cyan-300 font-mono">socket.*</code> calls inside Core 0 <code className="text-cyan-300 font-mono">socketTask</code>, protected Tally Arbiter state with <code className="text-cyan-300 font-mono">taStateMutex</code>, and routed all UI/I2C rendering onto Core 1 <code className="text-cyan-300 font-mono">loop()</code>.</div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

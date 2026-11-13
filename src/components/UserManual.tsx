@@ -46,7 +46,7 @@ export function UserManual() {
             </div>
             <p className="text-slate-400 text-sm max-w-2xl">
               Complete engineering manual for the M5AtomS3R + AtomPoE Broadcast Tally & Theatrical Cue System.
-              Details all 13 operating modes, wiring pinouts, third-party software integration guides, and live APIs.
+              Details all 14 operating modes, wiring pinouts, third-party software integration guides, and live APIs.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -66,7 +66,7 @@ export function UserManual() {
       {/* Navigation Pills */}
       <div className="flex flex-wrap gap-2 border-b border-slate-800 pb-3">
         {[
-          { id: 'modes', label: '13 Operating Modes', icon: Layers },
+          { id: 'modes', label: '14 Operating Modes', icon: Layers },
           { id: 'power', label: 'PoE Thermal & Low Power', icon: Zap },
           { id: 'p2p', label: 'P2P Heartbeat & Alarm', icon: ShieldAlert },
           { id: 'midi', label: 'rtpMIDI & MSC Control', icon: Music },
@@ -94,13 +94,13 @@ export function UserManual() {
         })}
       </div>
 
-      {/* SECTION: 13 Operating Modes */}
+      {/* SECTION: 14 Operating Modes */}
       {activeSection === 'modes' && (
         <div className="space-y-6">
           <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-6 space-y-4">
             <h2 className="text-xl font-bold text-white flex items-center gap-2">
               <Layers className="w-5 h-5 text-sky-400" />
-              Overview of the 13 Operating Modes
+              Overview of the 14 Operating Modes
             </h2>
             <p className="text-slate-300 text-sm">
               The M5AtomS3R + AtomPoE firmware contains a universal protocol stack that allows the unit to transform into any of the following roles simply by selecting it in the web interface:
@@ -185,6 +185,12 @@ export function UserManual() {
                   badge: 'iOS Port 53000',
                   color: 'bg-rose-500/20 text-rose-400 border-rose-500/40',
                   desc: 'Compatible with RSMCK OSC Cue Light iOS app. Matches station ID, handles /standby_ack, returns ACK to iPad, and shows top banner.'
+                },
+                {
+                  mode: 'vMix Live Production Tally',
+                  badge: 'TCP API 8099',
+                  color: 'bg-sky-500/20 text-sky-300 border-sky-500/40',
+                  desc: 'Connects directly to vMix TCP API (SUBSCRIBE TALLY). Shows Red for Program (1), Green for Preview (2), and optional PreviewInput / ActiveInput button triggers.'
                 }
               ].map((item, idx) => (
                 <div key={idx} className="bg-slate-800/60 border border-slate-700/60 rounded-lg p-4 space-y-2">

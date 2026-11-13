@@ -275,20 +275,22 @@ if (textWidth > 116) {
     category: 'Internal 6-Axis IMU Screen Auto-Orientation',
     original: `// Legacy: Fixed hardware orientation (0 degrees only)
 M5.Display.setRotation(0); // Upside down if mounted inverted on camera rigs`,
-    adapted: `// AtomS3R: 6-Axis IMU (MPU6886 / BMI270) Auto-Rotation
+    adapted: `// AtomS3R: 6-Axis IMU (BMI270 / MPU6886) Auto-Rotation (Core 1 Hardware Scanout)
 float ax, ay, az;
 M5.Imu.getAccel(&ax, &ay, &az);
 uint8_t targetRot = currentRotation;
-if (ay > 0.6f)       targetRot = 0; // Upright
-else if (ax > 0.6f)  targetRot = 1; // Rotated Right 90°
-else if (ay < -0.6f) targetRot = 2; // Inverted 180°
-else if (ax < -0.6f) targetRot = 3; // Rotated Left 270°
+if (fabs(ay) >= fabs(ax)) {
+  if (ay < -0.45f) targetRot = 2;     // Upright (Grove/PoE ports at bottom)
+  else if (ay > 0.45f) targetRot = 0; // Inverted 180° (Grove/PoE ports at top)
+} else {
+  if (ax > 0.45f) targetRot = 1;      // Rotated Right 90°
+  else if (ax < -0.45f) targetRot = 3;// Rotated Left 270°
+}
 
-// Debounce 250ms before flipping hardware scanout & M5Canvas sprite:
+// Debounce 200ms before flipping hardware MADCTL scanout (rotation 2 default):
 if (targetRot != currentRotation) {
   currentRotation = targetRot;
   M5.Display.setRotation(currentRotation);
-  canvas.setRotation(currentRotation);
   renderScreen();
 }`,
     explanation: 'Camera operators often clamp tally lights upside-down or sideways onto camera cages or teleprompters. The AtomS3R internal IMU automatically detects tilt and re-orients both the hardware display scanout and M5Canvas sprite buffer with zero PSRAM reallocation.'
@@ -337,29 +339,30 @@ udpTSL.begin(tsl_port);`,
     explanation: 'Allows multi-studio facilities to run multiple Tally Arbiter instances or custom TSL receivers on custom UDP ports without port collision.'
   },
   {
-    category: 'PoE Ethernet Priority (Wi-Fi Radio Disabling)',
-    original: `// Legacy: Dual-homed Ethernet and Wi-Fi causing duplicate IP & ARP conflicts
-ETH.begin(...);
-WiFi.begin(...);
-// Both interfaces active simultaneously with distinct IP addresses`,
-    adapted: `// AtomS3R: Dynamic PoE Precedence & Safe Wi-Fi Radio Management
+    category: 'PoE Ethernet Priority & Busy-Network Stability',
+    original: `// Legacy: ESPConnect & mDNS start before Ethernet DHCP completes
+espConnect.begin(...); // Scans/toggles STA <-> Captive Portal indefinitely
+MDNS.begin(...);     // Started before any netif has an IP address`,
+    adapted: `// AtomS3R: 7s Ethernet Grace Window, ETH.setDefault(), & Clean Wi-Fi Shutdown
 void checkEthernetWifiPrecedence() {
-  if (ETH.linkUp() && ETH.localIP() != IPAddress(0,0,0,0)) {
+  if (isEthernetActive()) {
     if (!wifiDisabledForEth) {
       wifiDisabledForEth = true;
-      WiFi.disconnect(false); // Disconnect STA without destroying netif
-      WiFi.enableAP(false);    // Turn off Access Point to eliminate secondary IP
+      ETH.setDefault(); // Keep LwIP default route & SocketIOClient on W5500 ETH
+      if (espConnectStarted) {
+        espConnect.end(); // Halt STA/Portal State 2->3->9 netif churn on Core 0
+        espConnectStarted = false;
+      }
+      WiFi.enableAP(false);
+      WiFi.disconnect(false);
+      WiFi.mode(WIFI_OFF); // Safe Wi-Fi power-down (no raw esp_wifi_stop)
     }
-  } else if (!ETH.linkUp()) {
-    if (wifiDisabledForEth) {
-      wifiDisabledForEth = false;
-      WiFi.enableAP(true);
-      espConnect.setAutoRestart(false);
-      espConnect.begin(listenerDeviceName.c_str(), listenerDeviceName.c_str());
-    }
+  } else if (!ETH.linkUp() && wifiDisabledForEth) {
+    wifiDisabledForEth = false;
+    startEspConnectFallback();
   }
 }`,
-    explanation: 'When AtomPoE W5500 SPI link is connected and receives an IP, the Wi-Fi AP is disabled to eliminate duplicate IP addresses and prevent RF collisions, while keeping the LwIP network interface intact so Socket.IO and TCP clients (Tally Arbiter) route cleanly over Ethernet.'
+    explanation: 'Waits up to 7 seconds on boot for AtomPoE W5500 DHCP so MycilaESPConnect never starts unnecessary STA/AP cycles on PoE networks. Once Ethernet gets an IP, ETH.setDefault() routes Tally Arbiter and HTTP cleanly over W5500 while espConnect.end() and WiFi.mode(WIFI_OFF) prevent IGMP/mDNS Core 0 panics on busy broadcast networks.'
   },
   {
     category: 'TSL 5.0 Dedicated Listener (UDP / TCP)',
@@ -410,6 +413,18 @@ vTaskDelay(pdMS_TO_TICKS(2)); // Halts CPU execution pipeline between packet bur
 // 4. Intelligent Auto-Dimming: dims backlight to 10% after 60s idle in Standby, wakes instantly on live cue
 M5.Display.setBrightness(25); // Drops board draw to ~0.45W and temp to ~35°C (Cool)`,
     explanation: 'The AtomPoE base houses a 48V-to-5V step-down buck converter in a sealed 24x24mm plastic housing. Because W5500 interrupt (ETH_PHY_IRQ) is hardwired to -1, standard light sleep would gate APB and drop packets. By reducing CPU to 80 MHz (leaving APB at 80 MHz for 100% SPI speed), stopping Wi-Fi/BT radios, yielding 2ms for FreeRTOS waiti pipeline halting, and auto-dimming the screen during idle standby, board power drops from ~1.8W to ~0.45W and operating temperature drops by over 20°C with zero packet latency penalty.'
+  },
+  {
+    category: 'vMix Live Production Tally (TCP API Port 8099)',
+    original: `// Legacy: Required an external Tally Arbiter bridge PC to relay vMix tallies`,
+    adapted: `// AtomS3R: Direct vMix TCP API Subscription pinned to Core 0 socketTask
+if (vmixClient.connect(ip, vmix_port, 1500)) {
+  vmixClient.setNoDelay(true);
+  vmixClient.print("SUBSCRIBE TALLY\\r\\n");
+}
+// Parses pushed "TALLY OK <digits>" state string for configured vmix_input:
+char sc = states.charAt(vmix_input - 1); // '1'=Program (Red), '2'=Preview (Green), '0'=Off`,
+    explanation: 'Connects directly to vMix software on TCP port 8099 with zero polling overhead via SUBSCRIBE TALLY, plus optional screen button triggers for FUNCTION PreviewInput or ActiveInput—isolated on Core 0 so offline timeouts never block Core 1.'
   }
 ];
 
